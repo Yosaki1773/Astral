@@ -117,6 +117,19 @@ async function deleteFromTableByPrefix(prefix: string): Promise<number> {
     return Number(deleted || 0);
 }
 
+/**
+ * 列出指定前缀下的 object_key。仅返回主键列，不读取 data BLOB。
+ * 用于关键字扫描等只需键、不需载荷内容的场景，避免拉取大字段。
+ */
+async function listKeysByPrefix(prefix: string, limit?: number): Promise<string[]> {
+    const pattern = `${prefix}%`;
+    const q = SgStorageRecord.query().where("object_key", "like", pattern).select("object_key");
+    if (limit && limit > 0) {
+        q.limit(limit);
+    }
+    return (await q.get()).all().map((row: { object_key: string }) => row.object_key);
+}
+
 export type { StoredObject };
 
 export default {
@@ -124,4 +137,5 @@ export default {
     getFromTable,
     deleteFromTable,
     deleteFromTableByPrefix,
+    listKeysByPrefix,
 };

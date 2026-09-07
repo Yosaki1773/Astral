@@ -202,6 +202,34 @@ async function deleteByPrefix(prefix: string): Promise<number> {
 }
 
 
+/**
+ * 列出指定前缀下所有对象的 key（不读取数据）。
+ * 双后端：R2 用 bucket.list 走元数据分页；DB 用 storageManager.listKeysByPrefix 只 select 主键列。
+ */
+async function listKeysByPrefix(prefix: string): Promise<string[]> {
+    assertValidPrefix(prefix);
+
+    const location = await resolveStorageLocation();
+    assertLocationAvailable(location);
+
+    if (location === RecordPayloadStorage.R2) {
+        const bucket = getWorkerBucket();
+        const keys: string[] = [];
+        let cursor: string | undefined;
+        do {
+            const page = await bucket.list({ cursor, limit: 1000, prefix });
+            for (const obj of page.objects) {
+                keys.push(obj.key);
+            }
+            cursor = page.truncated ? page.cursor : undefined;
+        } while (cursor);
+        return keys;
+    }
+
+    return storageManager.listKeysByPrefix(prefix);
+}
+
+
 async function putText(key: string, text: string) {
     await put(key, new TextEncoder().encode(text));
 }
@@ -220,6 +248,7 @@ export default {
     get,
     delete: deleteObject,
     deleteByPrefix,
+    listKeysByPrefix,
     putText,
     getText,
 };

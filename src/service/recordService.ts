@@ -55,6 +55,45 @@ async function clearPayloads(): Promise<number> {
     return objectStorageService.deleteByPrefix(RECORD_PAYLOAD_PREFIX);
 }
 
+const RECORD_ID_FROM_KEY = /^record\/(\d+)$/;
+
+/**
+ * 按关键字扫描对象存储中所有 record 载荷，返回请求或响应字段中含子串的 record id 集合。
+ * 大小写不敏感；只在 keyword 非空时调用。
+ *
+ * 注意：当前实现是 O(N) 全表扫描 + 每个对象 BLOB 解码，规模大时性能差。
+ * 后续可优化方向：在 record 表加预提取的消息内容列 + FTS 索引 / 改用 R2 批量读取。
+ */
+async function findMatchingRecordIds(keyword: string): Promise<number[]> {
+    const needle = keyword.toLowerCase();
+    if (!needle) {
+        return [];
+    }
+
+    const keys = await objectStorageService.listKeysByPrefix(RECORD_PAYLOAD_PREFIX);
+    const matched: number[] = [];
+
+    for (const key of keys) {
+        const match = RECORD_ID_FROM_KEY.exec(key);
+        if (!match) {
+            continue;
+        }
+        const recordId = parseInt(match[1], 10);
+        if (Number.isNaN(recordId)) {
+            continue;
+        }
+
+        const payload = await readPayload(recordId);
+        const haystackRequest = payload.request?.toLowerCase() ?? "";
+        const haystackResponse = payload.response?.toLowerCase() ?? "";
+        if (haystackRequest.includes(needle) || haystackResponse.includes(needle)) {
+            matched.push(recordId);
+        }
+    }
+
+    return matched;
+}
+
 // 一条用户请求 = 一条 record：进入路由循环前创建，此时还不知道命中的上游
 // 上游信息（vendor_id / vendor_model_name / upstream_format）由后续每次上游尝试 update 覆盖
 async function create(
@@ -152,4 +191,5 @@ export default {
     recordFailedRequest,
     attachPayload,
     clearPayloads,
+    findMatchingRecordIds,
 };

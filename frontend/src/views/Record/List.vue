@@ -49,6 +49,15 @@
                             style="width: 340px"
                         />
                     </a-form-item>
+                    <a-form-item label="关键字">
+                        <a-input
+                            v-model:value="searchForm.keyword"
+                            placeholder="搜索请求/响应内容"
+                            allow-clear
+                            style="width: 240px"
+                            @press-enter="handleSearch"
+                        />
+                    </a-form-item>
                     <a-form-item>
                         <a-space>
                             <a-button type="primary" @click="handleSearch">搜索</a-button>

@@ -8,6 +8,11 @@ interface RecordListOptions {
     endTime?: string;
     userIds?: number[] | null;
     modelIds?: number[] | null;
+    /**
+     * 关键字扫描得到的 record id 集合。空数组（与"无关键字"区分）表示已扫描但无命中，
+     * 需强制返回空集。null/undefined 表示未启用关键字过滤。
+     */
+    recordIds?: number[] | null;
     pageSize: number;
     offset: number;
     summaryOnly?: boolean;
@@ -85,6 +90,12 @@ async function list(options: RecordListOptions) {
     }
     if (options.modelIds && options.modelIds.length > 0) {
         q.whereIn("model_id", options.modelIds);
+    }
+    if (options.recordIds && options.recordIds.length > 0) {
+        q.whereIn("id", options.recordIds);
+    } else if (options.recordIds && options.recordIds.length === 0) {
+        // 关键字已扫描但 0 命中：强制无结果，避免空数组被 whereIn 忽略而返回全表
+        q.whereRaw("1 = 0");
     }
 
     const total = Number(await q.clone().count() || 0);

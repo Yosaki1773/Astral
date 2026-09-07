@@ -74,6 +74,7 @@ export interface RecordQuery extends PaginationParams {
     model_ids?: string;
     start_time?: string;
     end_time?: string;
+    keyword?: string;
 }
 
 export interface RecordListResponse {

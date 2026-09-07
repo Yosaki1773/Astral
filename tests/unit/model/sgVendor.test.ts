@@ -147,22 +147,36 @@ describe("SgVendor.getUrlByFormat — URL merge & resolution", () => {
         });
     });
 
-    describe("responses format fallback", () => {
-        it("falls back to custom openai base URL for responses format", () => {
+    describe("responses format requires explicit configuration", () => {
+        it("returns null when only an openai URL is configured (no derivation)", () => {
             const v = makeVendor("other", {
                 openai: "https://my-api.com/v1/chat/completions",
             });
 
-            const url = v.getUrlByFormat(ApiFormat.RESPONSES);
-            expect(url).toContain("my-api.com");
-            expect(url).toContain("/responses");
+            expect(v.getUrlByFormat(ApiFormat.RESPONSES)).toBeNull();
         });
 
-        it("falls back to preset openai URL for responses format", () => {
+        it("returns null for vendor with only preset openai URL (openai preset)", () => {
             const v = makeVendor("openai");
+            expect(v.getUrlByFormat(ApiFormat.RESPONSES)).toBeNull();
+        });
+
+        it("returns configured responses URL with auto-appended /responses suffix", () => {
+            const v = makeVendor("other", {
+                responses: "https://my-api.com/v1",
+            });
+
             const url = v.getUrlByFormat(ApiFormat.RESPONSES);
-            expect(url).toContain("api.openai.com");
-            expect(url).toContain("/responses");
+            expect(url).toBe("https://my-api.com/v1/responses");
+        });
+
+        it("preserves an explicit responses URL that already includes /responses", () => {
+            const v = makeVendor("other", {
+                responses: "https://my-api.com/v1/responses",
+            });
+
+            const url = v.getUrlByFormat(ApiFormat.RESPONSES);
+            expect(url).toBe("https://my-api.com/v1/responses");
         });
     });
 
@@ -185,14 +199,6 @@ describe("SgVendor.getUrlByFormat — URL merge & resolution", () => {
             const v = makeVendor("google");  // google only has openai preset
 
             expect(v.getUrlByFormat(ApiFormat.ANTHROPIC)).toBeNull();
-        });
-
-        it("returns null when openai URL is non-standard and cannot derive a responses URL", () => {
-            const v = makeVendor("other", {
-                openai: "https://my-api.com/chat/completions/v2",
-            });
-
-            expect(v.getUrlByFormat(ApiFormat.RESPONSES)).toBeNull();
         });
     });
 
@@ -267,17 +273,19 @@ describe("SgVendor.getUrlByFormat — URL merge & resolution", () => {
             expect(v.getSupportedFormats()).toEqual([]);
         });
 
-        it("derives responses from a /chat/completions openai URL", () => {
+        it("openai-only vendor does not auto-support responses (no derivation)", () => {
             const v = makeVendor("other", { openai: "https://a.com/v1/chat/completions" });
-            expect(v.getSupportedFormats()).toEqual([ApiFormat.OPENAI, ApiFormat.RESPONSES]);
+            const formats = v.getSupportedFormats();
+            expect(formats).toContain(ApiFormat.OPENAI);
+            expect(formats).not.toContain(ApiFormat.RESPONSES);
         });
 
-        it("derives responses from a base openai URL (suffix auto-completed)", () => {
+        it("vendor with base openai URL still only supports openai (no responses derivation)", () => {
             const v = makeVendor("other", { openai: "https://a.com/v1" });
-            expect(v.getSupportedFormats()).toEqual([ApiFormat.OPENAI, ApiFormat.RESPONSES]);
+            expect(v.getSupportedFormats()).toEqual([ApiFormat.OPENAI]);
         });
 
-        it("always supports responses when explicitly configured, regardless of openai URL shape", () => {
+        it("includes responses only when explicitly configured", () => {
             const v = makeVendor("other", {
                 openai: "https://a.com/v1",
                 responses: "https://a.com/v1/responses",
@@ -285,12 +293,13 @@ describe("SgVendor.getUrlByFormat — URL merge & resolution", () => {
             expect(v.getSupportedFormats()).toEqual([ApiFormat.OPENAI, ApiFormat.RESPONSES]);
         });
 
-        it("does not duplicate responses when derived and explicitly configured", () => {
+        it("lists responses exactly once when explicitly configured alongside openai", () => {
             const v = makeVendor("other", {
-                openai: "https://a.com/v1/chat/completions",
+                openai: "https://a.com/v1",
                 responses: "https://a.com/v1/responses",
             });
-            expect(v.getSupportedFormats()).toEqual([ApiFormat.OPENAI, ApiFormat.RESPONSES]);
+            const formats = v.getSupportedFormats();
+            expect(formats.filter(f => f === ApiFormat.RESPONSES)).toHaveLength(1);
         });
     });
 
