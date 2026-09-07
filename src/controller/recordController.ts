@@ -30,11 +30,18 @@ function serializeRecord(record: SgRecord) {
 async function listRecords(c: Context) {
     const query = c.req.query();
     const { pageSize, offset } = parsePaginationQuery(query);
-    const { status, start_time, end_time } = query;
+    const { status, start_time, end_time, keyword } = query;
 
     // user_ids 和 model_ids 支持多选，格式为逗号分隔的 ID 列表
     const userIds = query.user_ids ? query.user_ids.split(",").map(Number).filter(Boolean) : null;
     const modelIds = query.model_ids ? query.model_ids.split(",").map(Number).filter(Boolean) : null;
+
+    // 关键字搜索：trim 后非空才扫描对象存储；trim 后为空等价于未提供
+    const trimmedKeyword = typeof keyword === "string" ? keyword.trim() : "";
+    let recordIds: number[] | null = null;
+    if (trimmedKeyword) {
+        recordIds = await recordService.findMatchingRecordIds(trimmedKeyword);
+    }
 
     const { list: records, total } = await recordManager.list({
         status,
@@ -42,6 +49,7 @@ async function listRecords(c: Context) {
         endTime: end_time,
         userIds,
         modelIds,
+        recordIds,
         pageSize,
         offset,
         summaryOnly: true,

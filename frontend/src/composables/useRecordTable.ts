@@ -11,6 +11,7 @@ export interface RecordSearchForm {
     model_ids?: number[];
     start_time?: string;
     end_time?: string;
+    keyword?: string;
 }
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -25,6 +26,7 @@ export function useRecordTable() {
         model_ids: undefined,
         start_time: undefined,
         end_time: undefined,
+        keyword: undefined,
     });
 
     const pagination = reactive<TablePaginationState>({
@@ -57,6 +59,7 @@ export function useRecordTable() {
         searchForm.model_ids = undefined;
         searchForm.start_time = undefined;
         searchForm.end_time = undefined;
+        searchForm.keyword = undefined;
     }
 
     function resetPagination(): void {

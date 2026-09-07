@@ -3,7 +3,6 @@ import { CastsAttributes } from "sutando";
 import { inspect, InspectOptions } from "util";
 import { ApiFormat, VendorAuthMode } from "../constants";
 import vendorDefaultUrls from "../util/vendorDefaultUrlsUtil";
-import urlUtil from "../util/protocol/urlUtil";
 
 
 /**
@@ -102,17 +101,13 @@ class SgVendor extends Model {
         const urls = this.getMergedUrls();
 
         if (format === ApiFormat.RESPONSES) {
-            // Responses 格式：优先使用 urls[RESPONSES]
+            // Responses 格式：仅当 urls[RESPONSES] 显式配置时支持；与 ANTHROPIC 分支口径一致，
+            // 不再从 OPENAI URL 派生（派生得到的路径不代表上游真正实现了 responses 协议）。
             const responsesUrl = urls[ApiFormat.RESPONSES];
             if (responsesUrl) {
                 return responsesUrl.includes("/responses") ? responsesUrl : responsesUrl.replace(/\/$/, "") + "/responses";
             }
-            // 没有 urls[RESPONSES]，从 OPENAI URL 派生；非标准 openai URL 无法派生时返回 null
-            const openaiUrl = this.getUrlByFormat(ApiFormat.OPENAI);
-            if (openaiUrl === null) {
-                return null;
-            }
-            return urlUtil.convertOpenaiToResponses(openaiUrl);
+            return null;
         }
 
         if (format === ApiFormat.ANTHROPIC) {
@@ -136,20 +131,22 @@ class SgVendor extends Model {
 
     /**
      * 获取当前 vendor 支持的格式列表
-     * 口径与 getUrlByFormat 完全一致：能拿到某格式的 URL（含自动补全后缀后的派生）即视为支持，
-     * 避免「getUrlByFormat 能解析但 getSupportedFormats 不认可」的不一致。
+     * 口径：vendor.urls（或预设）里显式声明了对应 key 才算支持。
+     * 不再做派生推断——许多 OpenAI 兼容服务只实现了 /chat/completions，
+     * 若从其 openai URL 派生一个 /responses 路径去打，必然 404。
      * @returns 支持的格式数组
      */
     getSupportedFormats(): ApiFormat[] {
         const formats: ApiFormat[] = [];
+        const urls = this.getMergedUrls();
 
-        if (this.getUrlByFormat(ApiFormat.OPENAI) !== null) {
+        if (urls[ApiFormat.OPENAI]) {
             formats.push(ApiFormat.OPENAI);
         }
-        if (this.getUrlByFormat(ApiFormat.ANTHROPIC) !== null) {
+        if (urls[ApiFormat.ANTHROPIC]) {
             formats.push(ApiFormat.ANTHROPIC);
         }
-        if (this.getUrlByFormat(ApiFormat.RESPONSES) !== null) {
+        if (urls[ApiFormat.RESPONSES]) {
             formats.push(ApiFormat.RESPONSES);
         }
 

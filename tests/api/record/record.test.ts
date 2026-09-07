@@ -257,6 +257,154 @@ describe("Record API", () => {
     });
 
 
+    describe("GET /record/list.json - Keyword Search", () => {
+        let userAId: number;
+        let userAToken: string;
+        let userBId: number;
+        let userBToken: string;
+        let modelAId: number;
+        let modelBId: number;
+        let keywordVendorId: number;
+        let modelAName: string;
+        let modelBName: string;
+        const REQUEST_KEYWORD = "Hello";
+        const RESPONSE_KEYWORD = "Hello"; // mock server 回复内容也含 "Hello!"
+
+        beforeAll(async () => {
+            // 使用随机名称避免与其他测试的模型名冲突（modelService.getModel 按名字查找取第一条）
+            const ts = Date.now();
+            modelAName = `kw-model-a-${ts}`;
+            modelBName = `kw-model-b-${ts}`;
+
+            const vendor = await requestHelper.post(
+                "/vendor/create.json",
+                vendorFixtures.VENDOR_FIXTURES.openai(),
+                adminToken,
+            );
+            keywordVendorId = vendor.body.id;
+
+            const [userA, userB, modelA, modelB] = await Promise.all([
+                requestHelper.post("/user/create.json", mockHelper.generateUser(), adminToken),
+                requestHelper.post("/user/create.json", mockHelper.generateUser(), adminToken),
+                requestHelper.post("/model/create.json", modelFixtures.createRandomModel(keywordVendorId, modelAName), adminToken),
+                requestHelper.post("/model/create.json", modelFixtures.createRandomModel(keywordVendorId, modelBName), adminToken),
+            ]);
+            userAId = userA.body.id;
+            userAToken = userA.body.token;
+            userBId = userB.body.id;
+            userBToken = userB.body.token;
+            modelAId = modelA.body.id;
+            modelBId = modelB.body.id;
+
+            // userA × modelA: 2 requests
+            await requestHelper.post("/llm/v1/chat/completions", mockHelper.generateOpenAIChatRequest({ model: modelAName, stream: false }), userAToken);
+            await requestHelper.post("/llm/v1/chat/completions", mockHelper.generateOpenAIChatRequest({ model: modelAName, stream: false }), userAToken);
+            // userA × modelB: 1 request
+            await requestHelper.post("/llm/v1/chat/completions", mockHelper.generateOpenAIChatRequest({ model: modelBName, stream: false }), userAToken);
+            // userB × modelA: 1 request
+            await requestHelper.post("/llm/v1/chat/completions", mockHelper.generateOpenAIChatRequest({ model: modelAName, stream: false }), userBToken);
+
+            // 等所有记录 finalize（status 不再 processing）
+            await requestHelper.getFinalizedRecords(adminToken, 20, 5000);
+        });
+
+        it("should match keyword in request body (case-insensitive)", async () => {
+            const res = await requestHelper.get(
+                `/record/list.json?keyword=${encodeURIComponent(REQUEST_KEYWORD)}`,
+                adminToken,
+            );
+
+            expect(res.status).toBe(200);
+            expect(res.body.list.length).toBeGreaterThan(0);
+        });
+
+        it("should be case-insensitive (uppercase needle finds lowercase content)", async () => {
+            const res = await requestHelper.get(
+                `/record/list.json?keyword=${encodeURIComponent(REQUEST_KEYWORD.toLowerCase())}`,
+                adminToken,
+            );
+            const upperRes = await requestHelper.get(
+                `/record/list.json?keyword=${encodeURIComponent(REQUEST_KEYWORD.toUpperCase())}`,
+                adminToken,
+            );
+            expect(res.status).toBe(200);
+            expect(upperRes.status).toBe(200);
+            expect(upperRes.body.total).toBe(res.body.total);
+        });
+
+        it("should match keyword in response body", async () => {
+            const res = await requestHelper.get(
+                `/record/list.json?keyword=${encodeURIComponent(RESPONSE_KEYWORD)}`,
+                adminToken,
+            );
+
+            expect(res.status).toBe(200);
+            expect(res.body.list.length).toBeGreaterThan(0);
+        });
+
+        it("should return empty list when keyword matches nothing", async () => {
+            const res = await requestHelper.get(
+                `/record/list.json?keyword=zzznevermatchesexpect${Date.now()}`,
+                adminToken,
+            );
+
+            expect(res.status).toBe(200);
+            expect(res.body.list).toHaveLength(0);
+            expect(res.body.total).toBe(0);
+        });
+
+        it("should short-circuit (return all) when keyword is empty string", async () => {
+            const all = await requestHelper.get("/record/list.json", adminToken);
+            const empty = await requestHelper.get("/record/list.json?keyword=", adminToken);
+            expect(empty.body.total).toBe(all.body.total);
+        });
+
+        it("should combine keyword with user_ids filter (AND semantics)", async () => {
+            const res = await requestHelper.get(
+                `/record/list.json?keyword=${encodeURIComponent(REQUEST_KEYWORD)}&user_ids=${userAId}`,
+                adminToken,
+            );
+
+            expect(res.status).toBe(200);
+            // userA 共 3 条记录 (2 × modelA + 1 × modelB)
+            expect(res.body.total).toBe(3);
+            expect(res.body.list.every((r: any) => r.user_id === userAId)).toBe(true);
+        });
+
+        it("should combine keyword with model_ids filter (AND semantics)", async () => {
+            const res = await requestHelper.get(
+                `/record/list.json?keyword=${encodeURIComponent(REQUEST_KEYWORD)}&model_ids=${modelAId}`,
+                adminToken,
+            );
+
+            expect(res.status).toBe(200);
+            // modelA 共 3 条 (2 × userA + 1 × userB)
+            expect(res.body.total).toBe(3);
+            expect(res.body.list.every((r: any) => r.model_id === modelAId)).toBe(true);
+        });
+
+        it("should paginate over keyword results", async () => {
+            const page1 = await requestHelper.get(
+                `/record/list.json?keyword=${encodeURIComponent(REQUEST_KEYWORD)}&page=1&pageSize=2`,
+                adminToken,
+            );
+            const page2 = await requestHelper.get(
+                `/record/list.json?keyword=${encodeURIComponent(REQUEST_KEYWORD)}&page=2&pageSize=2`,
+                adminToken,
+            );
+
+            expect(page1.status).toBe(200);
+            expect(page2.status).toBe(200);
+            expect(page1.body.list.length).toBeLessThanOrEqual(2);
+            expect(page2.body.list.length).toBeLessThanOrEqual(2);
+
+            const ids1 = page1.body.list.map((r: any) => r.id);
+            const ids2 = page2.body.list.map((r: any) => r.id);
+            expect(ids1.some((id: number) => ids2.includes(id))).toBe(false);
+        });
+    });
+
+
     describe("Record Statistics Fields", () => {
         let openaiVendorId: number;
         let openaiModelId: number;
