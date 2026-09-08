@@ -362,10 +362,10 @@ describe("AI Protocol Conversion API", () => {
     }, 30000);
 
 
-    it("routes a Responses client directly to the responses upstream derived from a base openai URL", async () => {
-        // vendor 配了 openai（base URL，getUrlByFormat 会自动补全 /chat/completions 后缀 → 可派生 responses）
-        // + anthropic；getSupportedFormats 与 getUrlByFormat 口径统一后，responses 应直接路由到 responses 上游，
-        // 既不是回退 openai 转换，也不是错误回退到 anthropic
+    it("routes a Responses client to OpenAI upstream (not Anthropic) when the vendor supports openai+anthropic but not responses", async () => {
+        // vendor 只配了 openai + anthropic，未配 responses；
+        // 模型为自动上游，回退 vendor 能力 [openai, anthropic] 时，
+        // responses 客户端优先回退到 openai（而非 anthropic）进行协议转换
         const mockBaseUrl = config.UPSTREAM_CONFIG.mock.url;
         const vendorResponse = await requestHelper.post(
             "/vendor/create.json",
@@ -388,7 +388,7 @@ describe("AI Protocol Conversion API", () => {
             adminToken,
         );
 
-        // responses 客户端请求（base openai URL 派生 responses，直接走 responses 上游，无协议转换）
+        // responses 客户端请求（转换到 openai 发送）
         const response = await requestHelper.post(
             "/llm/v1/responses",
             {
@@ -407,13 +407,12 @@ describe("AI Protocol Conversion API", () => {
         expect(response.status).toBe(200);
         expect(response.body.object).toBe("response");
 
-        // 上游格式与客户端格式一致（均为 responses）时，record.upstream_format 记录为 null，
-        // 表示直接路由到 responses 而非转换到 openai / 回退到 anthropic
+        // responses 客户端回退时优先选 openai，record.upstream_format 记录为 "openai"
         const recordsResponse = await requestHelper.get(
             `/record/list.json?model_ids=${modelResponse.body.id}`,
             adminToken,
         );
         const record = recordsResponse.body.list[0];
-        expect(record.upstream_format).toBeNull();
+        expect(record.upstream_format).toBe("openai");
     }, 30000);
 });
