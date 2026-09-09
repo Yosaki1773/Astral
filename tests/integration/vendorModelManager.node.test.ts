@@ -63,6 +63,29 @@ describe("vendorModelManager (node, real db)", () => {
         expect(synced[0].model_id).toBe("claude-3-5-sonnet");
     });
 
+    it("syncByVendor preserves existing model records, ids, and configurations", async () => {
+        const vendor = await createVendor();
+        const vm1 = await vendorModelManager.create(vendor.id, "gpt-4o");
+        await vendorModelManager.update(vm1.id, vendor.id, JSON.stringify(["openai"]));
+        const vm2 = await vendorModelManager.create(vendor.id, "gpt-4o-mini");
+
+        // Sync keeps "gpt-4o" but replaces "gpt-4o-mini" with "gpt-4o-pro"
+        const synced = await vendorModelManager.syncByVendor(vendor.id, ["gpt-4o", "gpt-4o-pro"]);
+        expect(synced.length).toBe(2);
+
+        const gpt4o = synced.find(m => m.model_id === "gpt-4o");
+        const gpt4oPro = synced.find(m => m.model_id === "gpt-4o-pro");
+        const gpt4oMini = synced.find(m => m.model_id === "gpt-4o-mini");
+
+        expect(gpt4oMini).toBeUndefined();
+        expect(gpt4o).toBeDefined();
+        expect(gpt4o?.id).toBe(vm1.id); // ID should be preserved!
+        expect(gpt4o?.allowed_formats).toBe(JSON.stringify(["openai"])); // Config should be preserved!
+
+        expect(gpt4oPro).toBeDefined();
+        expect(gpt4oPro?.id).not.toBe(vm2.id); // New model should have a new ID
+    });
+
     it("syncByVendor with empty array clears all models", async () => {
         const vendor = await createVendor();
         await vendorModelManager.create(vendor.id, "gpt-4o");

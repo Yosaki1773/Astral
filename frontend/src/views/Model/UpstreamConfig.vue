@@ -6,6 +6,7 @@
                 :style="gridStyle"
             >
                 <div class="upstream-table-header">
+                    <span v-if="routingMode === 'first_available' && mode === 'edit'"></span>
                     <span>供应商</span>
                     <span>上游模型</span>
                     <span v-if="routingMode !== 'single'" class="centered-column">启用</span>
@@ -13,9 +14,27 @@
                 </div>
                 <div
                     v-for="(upstream, index) in upstreams"
-                    :key="index"
+                    :key="getUniqueKey(upstream)"
                     class="upstream-row"
+                    :class="{ 'is-dragging': dragIndex === index }"
+                    @dragenter="handleDragEnter(index, $event)"
+                    @dragover.prevent
                 >
+                    <div
+                        v-if="routingMode === 'first_available' && mode === 'edit'"
+                        class="upstream-drag-handle-cell"
+                    >
+                        <a-button
+                            type="text"
+                            size="small"
+                            class="drag-handle-btn"
+                            draggable="true"
+                            @dragstart="handleDragStart(index, $event)"
+                            @dragend="handleDragEnd"
+                        >
+                            <HolderOutlined />
+                        </a-button>
+                    </div>
                     <div class="upstream-field">
                         <a-select
                             :value="upstream.vendor_id"
@@ -60,28 +79,6 @@
                         />
                     </div>
                     <div class="upstream-actions">
-                        <a-tooltip v-if="routingMode === 'first_available'" title="上移">
-                            <a-button
-                                type="text"
-                                size="small"
-                                :disabled="mode === 'view' || index === 0"
-                                aria-label="上移"
-                                @click="moveUpstream(index, -1)"
-                            >
-                                <ArrowUpOutlined />
-                            </a-button>
-                        </a-tooltip>
-                        <a-tooltip v-if="routingMode === 'first_available'" title="下移">
-                            <a-button
-                                type="text"
-                                size="small"
-                                :disabled="mode === 'view' || index === upstreams.length - 1"
-                                aria-label="下移"
-                                @click="moveUpstream(index, 1)"
-                            >
-                                <ArrowDownOutlined />
-                            </a-button>
-                        </a-tooltip>
                         <a-tooltip title="测试">
                             <a-button
                                 type="text"
@@ -113,6 +110,7 @@
             </div>
             <a-button
                 v-if="routingMode !== 'single'"
+                class="add-upstream-btn"
                 block
                 type="dashed"
                 :disabled="mode === 'view'"
@@ -130,10 +128,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import {
-    ArrowDownOutlined,
-    ArrowUpOutlined,
     DeleteOutlined,
     ExperimentOutlined,
+    HolderOutlined,
     PlusOutlined,
 } from '@ant-design/icons-vue';
 import { listVendors, listVendorModels } from '@/api/vendor';
@@ -154,7 +151,9 @@ const gridStyle = computed(() => ({
     // 供应商/上游模型自适应撑开，启用列固定，操作列按内容自动撑开（auto）
     gridTemplateColumns: props.routingMode === 'single'
         ? 'minmax(0, 1fr) minmax(0, 1fr) auto'
-        : 'minmax(0, 1fr) minmax(0, 1fr) 44px auto',
+        : (props.routingMode === 'first_available' && props.mode === 'edit')
+            ? '32px minmax(0, 1fr) minmax(0, 1fr) 44px auto'
+            : 'minmax(0, 1fr) minmax(0, 1fr) 44px auto',
 }));
 
 const emit = defineEmits<{
@@ -269,18 +268,49 @@ function removeUpstream(index: number) {
 }
 
 
-function moveUpstream(index: number, offset: number) {
-    const targetIndex = index + offset;
-    if (targetIndex < 0 || targetIndex >= props.upstreams.length) {
+const uniqueKeys = new WeakMap<any, number>();
+let keySeq = 0;
+function getUniqueKey(item: any): number {
+    if (!uniqueKeys.has(item)) {
+        uniqueKeys.set(item, ++keySeq);
+    }
+    return uniqueKeys.get(item)!;
+}
+
+const dragIndex = ref<number | null>(null);
+
+function handleDragStart(index: number, event: DragEvent) {
+    if (props.mode === 'view') {
+        event.preventDefault();
         return;
     }
+    dragIndex.value = index;
+    if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', index.toString());
+    }
+}
+
+function handleDragEnter(index: number, event: DragEvent) {
+    if (props.mode === 'view' || dragIndex.value === null || dragIndex.value === index) {
+        return;
+    }
+    event.preventDefault();
+
+    const sourceIndex = dragIndex.value;
+    const targetIndex = index;
 
     const next = [...props.upstreams];
-    const [upstream] = next.splice(index, 1);
-    if (upstream) {
-        next.splice(targetIndex, 0, upstream);
+    const [movedItem] = next.splice(sourceIndex, 1);
+    if (movedItem) {
+        next.splice(targetIndex, 0, movedItem);
         emit('update:upstreams', next);
+        dragIndex.value = targetIndex;
     }
+}
+
+function handleDragEnd() {
+    dragIndex.value = null;
 }
 
 
@@ -361,9 +391,28 @@ function handleTest(_upstream: ModelUpstreamFormValue) {
     width: 100%;
 }
 
-.upstream-enabled {
+..upstream-enabled {
     display: flex;
     justify-content: center;
     align-items: center;
+}
+
+.upstream-drag-handle-cell {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.drag-handle-btn {
+    cursor: grab;
+    color: var(--text-secondary);
+}
+
+.drag-handle-btn:active {
+    cursor: grabbing;
+}
+
+.upstream-row.is-dragging > * {
+    opacity: 0.4;
 }
 </style>
