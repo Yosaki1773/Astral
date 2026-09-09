@@ -182,7 +182,7 @@ function startTestServer(): Promise<void> {
 
         let command: string[];
         let env: NodeJS.ProcessEnv = { ...process.env };
-        const startupTimeout = isWorkerMode ? 30000 : 3000;
+        const startupTimeout = 30000;
 
         if (isWorkerMode) {
             // Worker mode: use wrangler dev with test config
@@ -214,9 +214,10 @@ function startTestServer(): Promise<void> {
             console.log("Database path:", config.DB_CONFIG.path);
         }
 
-        testServerProcess = spawn("npx", command, {
+        testServerProcess = spawn(process.platform === "win32" ? "npx.cmd" : "npx", command, {
             env,
             stdio: ["ignore", "pipe", "pipe"],
+            shell: process.platform === "win32",
         });
 
         let serverStarted = false;

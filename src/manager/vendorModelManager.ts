@@ -33,14 +33,25 @@ async function create(vendorId: number, modelId: string): Promise<SgVendorModel>
 }
 
 /**
- * 同步该 vendor 下的模型列表：先删除旧记录，再重新插入选中的 model_id。
+ * 同步该 vendor 下的模型列表：保留已有的模型记录（及配置），仅新增新选择的模型，删除取消选择的模型。
  * @returns 同步后的完整模型列表（按 model_id 升序）
  */
 async function syncByVendor(vendorId: number, modelIds: string[]): Promise<SgVendorModel[]> {
-    await SgVendorModel.query().where("vendor_id", vendorId).delete();
+    const existingModels = await listByVendor(vendorId);
+    const existingMap = new Map(existingModels.map(m => [m.model_id, m]));
+    const incomingSet = new Set(modelIds);
 
-    if (modelIds.length > 0) {
-        for (const modelId of modelIds) {
+    // 找出需要删除的模型（原先有，但这次同步没选中的）
+    const modelsToDelete = existingModels.filter(m => !incomingSet.has(m.model_id));
+    if (modelsToDelete.length > 0) {
+        const idsToDelete = modelsToDelete.map(m => m.id);
+        await SgVendorModel.query().whereIn("id", idsToDelete).delete();
+    }
+
+    // 找出需要新增的模型（这次选中，但原先没有的）
+    const modelsToInsert = modelIds.filter(id => !existingMap.has(id));
+    if (modelsToInsert.length > 0) {
+        for (const modelId of modelsToInsert) {
             await SgVendorModel.query().create({
                 vendor_id: vendorId,
                 model_id: modelId,

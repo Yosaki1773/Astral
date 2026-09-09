@@ -41,8 +41,7 @@ const global = {
         ASelectOption: true,
         ASwitch: true,
         DialogTest: true,
-        ArrowDownOutlined: true,
-        ArrowUpOutlined: true,
+        HolderOutlined: true,
         DeleteOutlined: true,
         ExperimentOutlined: true,
         PlusOutlined: true,
@@ -75,7 +74,7 @@ describe('UpstreamConfig', () => {
     it('adds an enabled upstream in multi-upstream modes', async () => {
         const wrapper = mountEditor();
 
-        await wrapper.get('button:not([aria-label])').trigger('click');
+        await wrapper.get('.add-upstream-btn').trigger('click');
 
         expect(wrapper.emitted('update:upstreams')).toEqual([[
             [
@@ -86,10 +85,17 @@ describe('UpstreamConfig', () => {
         ]]);
     });
 
-    it('moves first_available upstreams without modifying their configuration', async () => {
+    it('moves first_available upstreams via drag and drop', async () => {
         const wrapper = mountEditor();
 
-        await wrapper.get('button[aria-label="下移"]').trigger('click');
+        const dragHandles = wrapper.findAll('.drag-handle-btn');
+        const rows = wrapper.findAll('.upstream-row');
+
+        // Trigger dragstart on the first drag handle
+        await dragHandles[0]?.trigger('dragstart');
+
+        // Trigger dragenter on the second row
+        await rows[1]?.trigger('dragenter');
 
         expect(wrapper.emitted('update:upstreams')).toEqual([[
             [

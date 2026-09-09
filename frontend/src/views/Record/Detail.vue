@@ -197,6 +197,7 @@ import { DownloadOutlined, ArrowUpOutlined, ArrowDownOutlined } from '@ant-desig
 import { useRecordStore } from '@/stores/record';
 import { deleteRecord } from '@/api/record';
 import { formatDate } from '@/utils/format';
+import { convertResponsesRequest, convertResponsesResponse } from '@/utils/responsesConverter';
 import JsonDownload from '@/utils/jsonDownload';
 import JsonViewer from '@/components/common/JsonViewer.vue';
 import ActivityTimeline from '@/components/common/ActivityTimeline.vue';
@@ -228,6 +229,16 @@ const conversationData = computed(() => {
             if (req.system != null) {
                 system = req.system;
             }
+            // 兼容 Responses 协议请求转换
+            if (req.input !== undefined) {
+                const converted = convertResponsesRequest(req);
+                if (converted.system) {
+                    system = converted.system;
+                }
+                if (converted.messages) {
+                    messages.push(...converted.messages);
+                }
+            }
         }
     } catch(e) {}
     try {
@@ -237,6 +248,11 @@ const conversationData = computed(() => {
                 messages.push(res.choices[0].message);
             } else if (res.message) {
                 messages.push(res.message);
+            }
+            // 兼容 Responses 协议响应转换
+            if (res.output && Array.isArray(res.output)) {
+                const converted = convertResponsesResponse(res);
+                messages.push(...converted);
             }
         }
     } catch(e) {}
