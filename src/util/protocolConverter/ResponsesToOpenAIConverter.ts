@@ -44,6 +44,10 @@ export class ResponsesToOpenAIConverter extends BaseConverter {
     private funcCallIds: Record<number, string> = {};
     private createdEmitted = false;
     private finishReason: string | null = null;
+    // 已收到 finish_reason（终止）帧；usage 帧到达后据此生成 response.completed
+    private finishReceived = false;
+    // 已完成 response.completed 生成，防止 usage 帧与 [DONE] 兜底重复触发
+    private completedEmitted = false;
 
     private nextSeq(): number {
         return ++this.seq;
@@ -307,9 +311,9 @@ export class ResponsesToOpenAIConverter extends BaseConverter {
         }
 
         const finishReason = upstreamRes.choices?.[0]?.finish_reason;
-        const status = (finishReason === "stop" || finishReason === "tool_calls" || finishReason === "length" || finishReason === "content_filter")
+        const status = (finishReason === "stop" || finishReason === "tool_calls")
             ? "completed"
-            : "completed"; // OpenAI 没有显式 failed finish_reason
+            : "failed"; // length/content_filter 等非正常完成，映射为 failed
 
         return {
             id: responseId,
@@ -509,119 +513,18 @@ export class ResponsesToOpenAIConverter extends BaseConverter {
                 }
             }
 
-            // finish_reason → 收尾各 open block
+            // finish_reason → 记录终止信号，但不立即生成 response.completed。
+            // 正常流中 usage 帧在 finish_reason 之后单独到达，需等 usage 帧后再收尾，
+            // 以拿到准确的 token 计数；若上游无 usage 帧，则由 [DONE] 兜底。
             if (finishReason) {
                 this.finishReason = finishReason;
-
-                // 收尾 reasoning
-                if (this.reasoningActive) {
-                    out.push({
-                        data: JSON.stringify({
-                            type: "response.reasoning_summary_text.done",
-                            sequence_number: this.nextSeq(),
-                            item_id: this.reasoningItemId,
-                            output_index: 0,
-                            summary_index: 0,
-                            text: this.reasoningBuf,
-                        }),
-                    });
-                    out.push({
-                        data: JSON.stringify({
-                            type: "response.reasoning_summary_part.done",
-                            sequence_number: this.nextSeq(),
-                            item_id: this.reasoningItemId,
-                            output_index: 0,
-                            summary_index: 0,
-                            part: { type: "summary_text", text: this.reasoningBuf },
-                        }),
-                    });
-                    out.push({
-                        data: JSON.stringify({
-                            type: "response.output_item.done",
-                            sequence_number: this.nextSeq(),
-                            output_index: 0,
-                            item: {
-                                id: this.reasoningItemId,
-                                type: "reasoning",
-                                summary: this.reasoningBuf ? [{ type: "summary_text", text: this.reasoningBuf }] : [],
-                            },
-                        }),
-                    });
-                    this.reasoningActive = false;
-                }
-
-                // 收尾 message
-                if (this.messageOpen) {
-                    out.push({
-                        data: JSON.stringify({
-                            type: "response.output_text.done",
-                            sequence_number: this.nextSeq(),
-                            item_id: this.currentMsgId,
-                            output_index: 0,
-                            content_index: 0,
-                            text: this.textBuf,
-                        }),
-                    });
-                    out.push({
-                        data: JSON.stringify({
-                            type: "response.content_part.done",
-                            sequence_number: this.nextSeq(),
-                            item_id: this.currentMsgId,
-                            output_index: 0,
-                            content_index: 0,
-                            part: { type: "output_text", text: this.textBuf },
-                        }),
-                    });
-                    out.push({
-                        data: JSON.stringify({
-                            type: "response.output_item.done",
-                            sequence_number: this.nextSeq(),
-                            output_index: 0,
-                            item: {
-                                id: this.currentMsgId,
-                                type: "message",
-                                status: "completed",
-                                content: [{ type: "output_text", text: this.textBuf }],
-                                role: "assistant",
-                            },
-                        }),
-                    });
-                    this.messageOpen = false;
-                    this.contentPartOpen = false;
-                }
-
-                // 收尾 function_calls
-                const indices = Object.keys(this.funcCallIds).map(Number).sort((a, b) => a - b);
-                for (const i of indices) {
-                    out.push({
-                        data: JSON.stringify({
-                            type: "response.function_call_arguments.done",
-                            sequence_number: this.nextSeq(),
-                            item_id: `fc_${this.funcCallIds[i]}`,
-                            output_index: i,
-                            arguments: this.funcArgsBuf[i] || "{}",
-                        }),
-                    });
-                    out.push({
-                        data: JSON.stringify({
-                            type: "response.output_item.done",
-                            sequence_number: this.nextSeq(),
-                            output_index: i,
-                            item: {
-                                id: `fc_${this.funcCallIds[i]}`,
-                                type: "function_call",
-                                status: "completed",
-                                arguments: this.funcArgsBuf[i] || "{}",
-                                call_id: this.funcCallIds[i],
-                                name: this.funcNames[i] || "",
-                            },
-                        }),
-                    });
-                }
+                this.finishReceived = true;
             }
         }
 
-        // usage 帧 → response.completed
+        // usage 帧 → 累积 token 用量，并在已收到 finish_reason 时生成 response.completed。
+        // include_usage 会让 usage 提前挂在首 chunk（而非最后一帧），但只有配合
+        // finish_reason（真正终止）才能判定完成，避免正文尚未产出时提前结束。
         if (chunk.usage) {
             this.inputTokens = chunk.usage.prompt_tokens ?? this.inputTokens;
             this.outputTokens = chunk.usage.completion_tokens ?? this.outputTokens;
@@ -629,68 +532,189 @@ export class ResponsesToOpenAIConverter extends BaseConverter {
             if (cachedTokens !== undefined) {
                 this.cacheReadTokens = cachedTokens;
             }
-
-            const outputArr: any[] = [];
-            if (this.textBuf) {
-                outputArr.push({
-                    id: this.currentMsgId,
-                    type: "message",
-                    status: "completed",
-                    content: [{ type: "output_text", text: this.textBuf }],
-                    role: "assistant",
-                });
+            if (this.finishReceived) {
+                this.finishResponse(out);
             }
-            if (this.reasoningBuf) {
-                outputArr.push({
-                    id: this.reasoningItemId,
-                    type: "reasoning",
-                    summary: [{ type: "summary_text", text: this.reasoningBuf }],
-                });
-            }
-            const funcIndices = Object.keys(this.funcCallIds).map(Number).sort((a, b) => a - b);
-            for (const i of funcIndices) {
-                outputArr.push({
-                    id: `fc_${this.funcCallIds[i]}`,
-                    type: "function_call",
-                    status: "completed",
-                    arguments: this.funcArgsBuf[i] || "{}",
-                    call_id: this.funcCallIds[i],
-                    name: this.funcNames[i] || "",
-                });
-            }
-
-            const status = (this.finishReason === "stop" || this.finishReason === "tool_calls" || this.finishReason === "length" || this.finishReason === "content_filter")
-                ? "completed"
-                : "completed";
-
-            out.push({
-                data: JSON.stringify({
-                    type: "response.completed",
-                    sequence_number: this.nextSeq(),
-                    response: {
-                        id: this.responseId,
-                        object: "response",
-                        created_at: Math.floor(Date.now() / 1000),
-                        status,
-                        model: this.requestModel,
-                        output: outputArr,
-                        usage: {
-                            input_tokens: this.inputTokens,
-                            input_tokens_details: this.cacheReadTokens ? {
-                                cached_tokens: this.cacheReadTokens,
-                            } : undefined,
-                            output_tokens: this.outputTokens,
-                            total_tokens: this.inputTokens + this.cacheReadTokens + this.outputTokens,
-                        },
-                    },
-                }),
-            });
-
-            // reset state
-            this.resetState();
         }
 
         return out;
+    }
+
+
+    /**
+     * 收尾当前响应：关闭 reasoning/message/function_call 等 open block（补发 *.done 事件），
+     * 并依据 finishReason 生成 response.completed，最后重置流状态。
+     * 由 finish_reason 触发；[DONE] 时由 handleDoneEvent 兜底调用以覆盖上游非正常终止的情况。
+     */
+    private finishResponse(out: ProtocolStreamEvent[]): void {
+        // 幂等：usage 帧与 [DONE] 兜底可能先后触发，仅生成一次 response.completed
+        if (this.completedEmitted) return;
+        this.completedEmitted = true;
+
+        // 收尾 reasoning
+        if (this.reasoningActive) {
+            out.push({
+                data: JSON.stringify({
+                    type: "response.reasoning_summary_text.done",
+                    sequence_number: this.nextSeq(),
+                    item_id: this.reasoningItemId,
+                    output_index: 0,
+                    summary_index: 0,
+                    text: this.reasoningBuf,
+                }),
+            });
+            out.push({
+                data: JSON.stringify({
+                    type: "response.reasoning_summary_part.done",
+                    sequence_number: this.nextSeq(),
+                    item_id: this.reasoningItemId,
+                    output_index: 0,
+                    summary_index: 0,
+                    part: { type: "summary_text", text: this.reasoningBuf },
+                }),
+            });
+            out.push({
+                data: JSON.stringify({
+                    type: "response.output_item.done",
+                    sequence_number: this.nextSeq(),
+                    output_index: 0,
+                    item: {
+                        id: this.reasoningItemId,
+                        type: "reasoning",
+                        summary: this.reasoningBuf ? [{ type: "summary_text", text: this.reasoningBuf }] : [],
+                    },
+                }),
+            });
+            this.reasoningActive = false;
+        }
+
+        // 收尾 message
+        if (this.messageOpen) {
+            out.push({
+                data: JSON.stringify({
+                    type: "response.output_text.done",
+                    sequence_number: this.nextSeq(),
+                    item_id: this.currentMsgId,
+                    output_index: 0,
+                    content_index: 0,
+                    text: this.textBuf,
+                }),
+            });
+            out.push({
+                data: JSON.stringify({
+                    type: "response.content_part.done",
+                    sequence_number: this.nextSeq(),
+                    item_id: this.currentMsgId,
+                    output_index: 0,
+                    content_index: 0,
+                    part: { type: "output_text", text: this.textBuf },
+                }),
+            });
+            out.push({
+                data: JSON.stringify({
+                    type: "response.output_item.done",
+                    sequence_number: this.nextSeq(),
+                    output_index: 0,
+                    item: {
+                        id: this.currentMsgId,
+                        type: "message",
+                        status: "completed",
+                        content: [{ type: "output_text", text: this.textBuf }],
+                        role: "assistant",
+                    },
+                }),
+            });
+            this.messageOpen = false;
+            this.contentPartOpen = false;
+        }
+
+        // 收尾 function_calls
+        const funcIndices = Object.keys(this.funcCallIds).map(Number).sort((a, b) => a - b);
+        for (const i of funcIndices) {
+            out.push({
+                data: JSON.stringify({
+                    type: "response.function_call_arguments.done",
+                    sequence_number: this.nextSeq(),
+                    item_id: `fc_${this.funcCallIds[i]}`,
+                    output_index: i,
+                    arguments: this.funcArgsBuf[i] || "{}",
+                }),
+            });
+            out.push({
+                data: JSON.stringify({
+                    type: "response.output_item.done",
+                    sequence_number: this.nextSeq(),
+                    output_index: i,
+                    item: {
+                        id: `fc_${this.funcCallIds[i]}`,
+                        type: "function_call",
+                        status: "completed",
+                        arguments: this.funcArgsBuf[i] || "{}",
+                        call_id: this.funcCallIds[i],
+                        name: this.funcNames[i] || "",
+                    },
+                }),
+            });
+        }
+
+        // 依据 finishReason 判定状态：length/content_filter 非正常完成，映射为 incomplete
+        const status = (this.finishReason === "stop" || this.finishReason === "tool_calls")
+            ? "completed"
+            : "incomplete";
+
+        const outputArr: any[] = [];
+        if (this.textBuf) {
+            outputArr.push({
+                id: this.currentMsgId,
+                type: "message",
+                status: "completed",
+                content: [{ type: "output_text", text: this.textBuf }],
+                role: "assistant",
+            });
+        }
+        if (this.reasoningBuf) {
+            outputArr.push({
+                id: this.reasoningItemId,
+                type: "reasoning",
+                summary: [{ type: "summary_text", text: this.reasoningBuf }],
+            });
+        }
+        for (const i of funcIndices) {
+            outputArr.push({
+                id: `fc_${this.funcCallIds[i]}`,
+                type: "function_call",
+                status: "completed",
+                arguments: this.funcArgsBuf[i] || "{}",
+                call_id: this.funcCallIds[i],
+                name: this.funcNames[i] || "",
+            });
+        }
+
+        out.push({
+            data: JSON.stringify({
+                type: "response.completed",
+                sequence_number: this.nextSeq(),
+                response: {
+                    id: this.responseId,
+                    object: "response",
+                    created_at: Math.floor(Date.now() / 1000),
+                    status,
+                    model: this.requestModel,
+                    output: outputArr,
+                    usage: {
+                        input_tokens: this.inputTokens,
+                        input_tokens_details: this.cacheReadTokens ? {
+                            cached_tokens: this.cacheReadTokens,
+                        } : undefined,
+                        output_tokens: this.outputTokens,
+                        total_tokens: this.inputTokens + this.cacheReadTokens + this.outputTokens,
+                    },
+                },
+            }),
+        });
+
+        // reset state
+        this.resetState();
     }
 
     protected override handleDoneEvent(): ProtocolStreamEvent[] {
@@ -698,167 +722,7 @@ export class ResponsesToOpenAIConverter extends BaseConverter {
 
         // 如果还没有生成 response.completed，在 [DONE] 时兜底生成
         if (this.createdEmitted) {
-            // 收尾未关闭的 block
-            if (this.reasoningActive) {
-                out.push({
-                    data: JSON.stringify({
-                        type: "response.reasoning_summary_text.done",
-                        sequence_number: this.nextSeq(),
-                        item_id: this.reasoningItemId,
-                        output_index: 0,
-                        summary_index: 0,
-                        text: this.reasoningBuf,
-                    }),
-                });
-                out.push({
-                    data: JSON.stringify({
-                        type: "response.reasoning_summary_part.done",
-                        sequence_number: this.nextSeq(),
-                        item_id: this.reasoningItemId,
-                        output_index: 0,
-                        summary_index: 0,
-                        part: { type: "summary_text", text: this.reasoningBuf },
-                    }),
-                });
-                out.push({
-                    data: JSON.stringify({
-                        type: "response.output_item.done",
-                        sequence_number: this.nextSeq(),
-                        output_index: 0,
-                        item: {
-                            id: this.reasoningItemId,
-                            type: "reasoning",
-                            summary: this.reasoningBuf ? [{ type: "summary_text", text: this.reasoningBuf }] : [],
-                        },
-                    }),
-                });
-                this.reasoningActive = false;
-            }
-
-            if (this.messageOpen) {
-                out.push({
-                    data: JSON.stringify({
-                        type: "response.output_text.done",
-                        sequence_number: this.nextSeq(),
-                        item_id: this.currentMsgId,
-                        output_index: 0,
-                        content_index: 0,
-                        text: this.textBuf,
-                    }),
-                });
-                out.push({
-                    data: JSON.stringify({
-                        type: "response.content_part.done",
-                        sequence_number: this.nextSeq(),
-                        item_id: this.currentMsgId,
-                        output_index: 0,
-                        content_index: 0,
-                        part: { type: "output_text", text: this.textBuf },
-                    }),
-                });
-                out.push({
-                    data: JSON.stringify({
-                        type: "response.output_item.done",
-                        sequence_number: this.nextSeq(),
-                        output_index: 0,
-                        item: {
-                            id: this.currentMsgId,
-                            type: "message",
-                            status: "completed",
-                            content: [{ type: "output_text", text: this.textBuf }],
-                            role: "assistant",
-                        },
-                    }),
-                });
-                this.messageOpen = false;
-                this.contentPartOpen = false;
-            }
-
-            const funcIndices = Object.keys(this.funcCallIds).map(Number).sort((a, b) => a - b);
-            for (const i of funcIndices) {
-                out.push({
-                    data: JSON.stringify({
-                        type: "response.function_call_arguments.done",
-                        sequence_number: this.nextSeq(),
-                        item_id: `fc_${this.funcCallIds[i]}`,
-                        output_index: i,
-                        arguments: this.funcArgsBuf[i] || "{}",
-                    }),
-                });
-                out.push({
-                    data: JSON.stringify({
-                        type: "response.output_item.done",
-                        sequence_number: this.nextSeq(),
-                        output_index: i,
-                        item: {
-                            id: `fc_${this.funcCallIds[i]}`,
-                            type: "function_call",
-                            status: "completed",
-                            arguments: this.funcArgsBuf[i] || "{}",
-                            call_id: this.funcCallIds[i],
-                            name: this.funcNames[i] || "",
-                        },
-                    }),
-                });
-            }
-
-            // 生成 response.completed
-            const outputArr: any[] = [];
-            if (this.textBuf) {
-                outputArr.push({
-                    id: this.currentMsgId,
-                    type: "message",
-                    status: "completed",
-                    content: [{ type: "output_text", text: this.textBuf }],
-                    role: "assistant",
-                });
-            }
-            if (this.reasoningBuf) {
-                outputArr.push({
-                    id: this.reasoningItemId,
-                    type: "reasoning",
-                    summary: [{ type: "summary_text", text: this.reasoningBuf }],
-                });
-            }
-            for (const i of funcIndices) {
-                outputArr.push({
-                    id: `fc_${this.funcCallIds[i]}`,
-                    type: "function_call",
-                    status: "completed",
-                    arguments: this.funcArgsBuf[i] || "{}",
-                    call_id: this.funcCallIds[i],
-                    name: this.funcNames[i] || "",
-                });
-            }
-
-            const status = (this.finishReason === "stop" || this.finishReason === "tool_calls" || this.finishReason === "length" || this.finishReason === "content_filter")
-                ? "completed"
-                : "completed";
-
-            out.push({
-                data: JSON.stringify({
-                    type: "response.completed",
-                    sequence_number: this.nextSeq(),
-                    response: {
-                        id: this.responseId,
-                        object: "response",
-                        created_at: Math.floor(Date.now() / 1000),
-                        status,
-                        model: this.requestModel,
-                        output: outputArr,
-                        usage: {
-                            input_tokens: this.inputTokens,
-                            input_tokens_details: this.cacheReadTokens ? {
-                                cached_tokens: this.cacheReadTokens,
-                            } : undefined,
-                            output_tokens: this.outputTokens,
-                            total_tokens: this.inputTokens + this.cacheReadTokens + this.outputTokens,
-                        },
-                    },
-                }),
-            });
-
-            this.resetState();
+            this.finishResponse(out);
         }
 
         return out;
@@ -882,5 +746,7 @@ export class ResponsesToOpenAIConverter extends BaseConverter {
         this.funcCallIds = {};
         this.createdEmitted = false;
         this.finishReason = null;
+        this.finishReceived = false;
+        this.completedEmitted = false;
     }
 }

@@ -948,6 +948,43 @@ describe("ResponsesToOpenAIConverter", () => {
             expect(completedData.response.usage.input_tokens).toBe(10);
             expect(completedData.response.usage.output_tokens).toBe(5);
         });
+
+        it("should not emit response.completed when reasoning-only chunk carries usage but no finish_reason", () => {
+            // 回归：include_usage 会使 usage 提前挂在首 chunk，若上游仅产出 reasoning 且
+            // 未发 finish_reason（连接提前中断），不能据此提前判定完成。
+            const streamConverter = new ResponsesToOpenAIConverter("gpt-4");
+            const events: any[] = [];
+
+            const chunk: OpenAIChunk = {
+                id: "chatcmpl-123",
+                object: "chat.completion.chunk",
+                created: 1234567890,
+                model: "gpt-4",
+                choices: [{
+                    index: 0,
+                    delta: { role: "assistant", reasoning_content: "Let me think..." },
+                    finish_reason: null,
+                }],
+                usage: {
+                    prompt_tokens: 100,
+                    completion_tokens: 0,
+                    total_tokens: 100,
+                },
+            };
+            events.push(...streamConverter.convertStreamEvent(JSON.stringify(chunk)));
+
+            const eventTypes = events.map((e) => {
+                try {
+                    return JSON.parse(e.data).type;
+                } catch {
+                    return null;
+                }
+            });
+            // 应已产出 reasoning 相关事件，但绝不能出现 response.completed
+            expect(eventTypes).toContain("response.output_item.added");
+            expect(eventTypes).toContain("response.reasoning_summary_text.delta");
+            expect(eventTypes).not.toContain("response.completed");
+        });
     });
 
     // ─── ConverterFactory 测试 ───
