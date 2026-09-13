@@ -1,6 +1,6 @@
 {
     "productName": "GT AI Gateway",
-    "version": "1.8.7-beta3",
+    "version": "1.8.7-beta6",
     "identifier": "com.gtcoder.aigateway",
     "build": {
         "frontendDist": "../../frontend/dist",
@@ -34,7 +34,7 @@
         "targets": "all",
         "resources": {
             "icons/tray-icon@2x.png": "icons/tray-icon@2x.png",
-            "../../resource/migrate/**/*": "resource/migrate/"
+            "../../resource/migrate": "resource/migrate"
         },
         "externalBin": [
             "../build/binaries/ai-gateway-backend"

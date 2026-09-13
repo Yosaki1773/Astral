@@ -3,7 +3,7 @@ import { ROOT_USER_ID, UserType, BALANCE_SCALE } from "../constants";
 import userManager from "../manager/userManager";
 import rechargeRecordManager from "../manager/rechargeRecordManager";
 import configService from "./configService";
-import customError from "../util/customErrorUtil";
+import customError from "../customError";
 
 // 元 → 整数微元（DB 余额存整数微元，避免浮点）
 function toUnits(yuan: number): number {
@@ -73,13 +73,14 @@ async function adjustBalance(
     // Worker 模式下 D1 不支持多语句事务（ormService 已绕过连接池），故维持原行为、
     // 不做事务包裹，仅把查询部分（findById）下沉到 manager。充值记录写入失败时
     // 余额已更新但不留记录，与拆分前行为一致。
-    // Create recharge record（amount 仍以"元"记录）
+    // Create recharge record（amount 仍以"元"记录）；租户取被充值用户归属
     await rechargeRecordManager.create({
         user_id: userId,
         amount: amount,
         type: type,
         remark: remark,
         operator: operator,
+        tenant_id: user.tenant_id ?? null,
     });
 
     // 返回更新后的用户（incrementBalance 走 query-builder，不回写内存实例，需重新读取）

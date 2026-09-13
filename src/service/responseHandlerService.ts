@@ -2,23 +2,26 @@ import { Context } from "hono";
 import { streamSSE, SSEStreamingApi } from "hono/streaming";
 import { StatusCode } from "hono/utils/http-status";
 import type { WriteStream } from "fs";
+import type { ProtocolStreamEvent } from "../util/protocolConverter/protocolTypes";
 import { SgModel } from "../model/sgModel";
 import { SgUser } from "../model/sgUser";
 import { SgRecord } from "../model/sgRecord";
-import { ApiFormat, FailedCode, SgRecordStatus, RequestActivityStage, ActivityLevel } from "../constants";
+import { ApiFormat, FailedCode, SgRecordStatus, RequestActivityStage, ActivityLevel, ConfigKey } from "../constants";
 import { BaseConverter } from "../util/protocolConverter/BaseConverter";
 import { AccumulatorBase } from "../util/accumulator/accumulatorBase";
-import recordService from "./recordService";
+import recordService, { type MarkFailedOptions } from "./recordService";
 import requestActivityService from "./requestActivityService";
+import configService from "./configService";
+import abortTimeoutUtil from "../util/abortTimeoutUtil";
 import userService from "./userService";
 import streamLogService from "./streamLogService";
 import usageUtils, { type Dict } from "../util/protocol/usageUtil";
 import openaiChatAccumulator from "../util/accumulator/openaiChatAccumulator";
 import anthropicAccumulator from "../util/accumulator/anthropicAccumulator";
 import responsesAccumulator from "../util/accumulator/responsesAccumulator";
-import sseEvent from "../util/protocol/sseEventUtil";
-import { runInBackground } from "../util/runInBackgroundUtil";
-import customError from "../util/customErrorUtil";
+import sseEventUtil from "../util/protocol/sseEventUtil";
+import runInBackgroundUtil from "../util/runInBackgroundUtil";
+import customError from "../customError";
 
 
 // ====================================================================
@@ -27,18 +30,17 @@ import customError from "../util/customErrorUtil";
 
 interface StreamRunResult {
     accumulator: AccumulatorBase;
-    firstTokenTime: number | null;
     failedCode: string | null;
-    streamErrorData: unknown | null;
-    eventCount: number;
 }
 
 
-interface RunSseLoopOptions {
+interface RunSSELoopOptions {
     accumulator: AccumulatorBase;
     converter: BaseConverter | null;
-    logPrefix: string;
 }
+
+// 流式读循环日志前缀（runSSELoop 只被 handleStreamResponse 一处调用，直接固化）
+const SSE_LOOP_LOG_PREFIX = "[responseHandlerService]";
 
 
 // ====================================================================
@@ -46,117 +48,124 @@ interface RunSseLoopOptions {
 // ====================================================================
 
 /**
+ * 向客户端写入一个事件块：
+ * - 心跳注释块（comment 有值）→ stream.write 原样透传（writeSSE 只能输出 data: 行，注释需原样写）
+ * - 数据事件 → writeSSE 输出 data:/event:/id:
+ * 任一路写失败都视为客户端断开，统一包成 ClientWriteError 由外层 catch 按类型归类。
+ */
+async function writeEventToClient(
+    stream: SSEStreamingApi,
+    event: ProtocolStreamEvent & { comment?: string },
+): Promise<void> {
+    try {
+        if (event.comment) {
+            await stream.write(event.comment + "\n\n");
+        } else {
+            await stream.writeSSE({
+                data: event.data,
+                event: event.event,
+                id: event.id,
+            });
+        }
+    } catch (e: any) {
+        throw new customError.ClientWriteError(e);
+    }
+}
+
+
+/**
  * 消费上游 SSE 流：decode → 拆分事件 → 协议转换 → 累加 → 实时转发给客户端。
  * 返回统一状态供收尾使用（finalizeStreamResult）。
  */
-async function runSseLoop(
+async function runSSELoop(
     c: Context,
     upstreamRes: Response,
     stream: SSEStreamingApi,
     logStream: WriteStream | null,
-    opts: RunSseLoopOptions,
+    opts: RunSSELoopOptions,
 ): Promise<StreamRunResult> {
     const { accumulator } = opts;
-    const reader = upstreamRes.body!.getReader();
+    const upstreamReader = upstreamRes.body!.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    let eventCount = 0;
     let failedCode: string | null = null;
-    let streamErrorData: unknown | null = null;
-    let firstTokenTime: number | null = null;
 
-    const abortHandler = () => {
+    // 相邻 chunk 空闲超时：超时置 UPSTREAM_TIMEOUT 并取消上游 body
+    const idleTimeoutMs = await configService.getNumber(ConfigKey.UPSTREAM_STREAM_IDLE_TIMEOUT_MS);
+
+    // 客户端断开感知：直接订阅客户端信号，已断开则立即触发
+    const unsubscribeClientAbort = abortTimeoutUtil.onSignalAbort(c.req.raw.signal, () => {
         if (!failedCode) failedCode = FailedCode.CLIENT_DISCONNECTED;
-        reader.cancel().catch(() => {});
-    };
-    c.req.raw.signal.addEventListener("abort", abortHandler);
+        upstreamReader.cancel().catch(() => {});
+    });
 
     try {
         while (true) {
-            let done: boolean;
-            let value: Uint8Array | undefined;
-            try {
-                const result = await reader.read();
-                done = result.done;
-                value = result.value;
-            } catch (e: any) {
-                console.error(`${opts.logPrefix} Upstream read error:`, e);
-                if (failedCode !== FailedCode.CLIENT_DISCONNECTED) {
-                    failedCode = FailedCode.UPSTREAM_DISCONNECTED;
-                }
-                break;
-            }
-            if (done) break;
+            const result = await abortTimeoutUtil.raceWithTimeout(
+                upstreamReader.read(),
+                idleTimeoutMs,
+                () => {
+                    if (!failedCode) failedCode = FailedCode.UPSTREAM_TIMEOUT;
+                    upstreamReader.cancel().catch(() => {});
+                },
+            );
+            if (result.done) break;
 
-            const chunk = decoder.decode(value, { stream: true });
+            const chunk = decoder.decode(result.value, { stream: true });
             streamLogService.appendStreamLog(logStream, chunk);
             buffer += chunk;
 
-            const splitResult = sseEvent.splitEvents(buffer);
-            const events = splitResult.events;
+            const splitResult = sseEventUtil.splitEvents(buffer);
             buffer = splitResult.remainingBuffer;
 
-            let clientDisconnected = false;
-            for (const event of events) {
-                if (!event.trim()) continue;
-
-                eventCount++;
-
-                const parsedEvent = sseEvent.parseEvent(event);
-                if (!parsedEvent) continue;
+            for (const upstreamEvent of splitResult.events) {
+                // 心跳等注释事件：无 data、不做协议转换与累加，原样透传保持下游 SSE 连接活跃
+                if (upstreamEvent.comment) {
+                    await writeEventToClient(stream, upstreamEvent);
+                    continue;
+                }
 
                 const clientEvents = opts.converter
-                    ? opts.converter.convertStreamEvent(parsedEvent.data, parsedEvent.event, parsedEvent.id)
-                    : [parsedEvent];
+                    ? opts.converter.convertStreamEvent(upstreamEvent.data, upstreamEvent.event, upstreamEvent.id)
+                    : [upstreamEvent];
 
                 for (const clientEvent of clientEvents) {
                     if (!clientEvent.data) continue;
 
                     accumulator.addEvent(clientEvent);
 
-                    if (firstTokenTime === null && accumulator.isOutputStarted()) {
-                        firstTokenTime = Date.now();
-                    }
-
+                    // 出错后不再转发给客户端：记失败码（未记录时）并中止
                     if (accumulator.isErrored()) {
-                        if (
-                            failedCode !== FailedCode.CLIENT_DISCONNECTED
-                            && failedCode !== FailedCode.UPSTREAM_DISCONNECTED
-                        ) {
-                            failedCode = FailedCode.UPSTREAM_ERROR;
+                        if (failedCode === null) {
+                            failedCode = accumulator.isParseFailed()
+                                ? FailedCode.SSE_PARSE_ERROR
+                                : FailedCode.UPSTREAM_ERROR;
                         }
-                        streamErrorData = accumulator.getError()
-                            ?? { event: clientEvent.event, data: clientEvent.data };
-                    }
-
-                    try {
-                        await stream.writeSSE({
-                            data: clientEvent.data,
-                            event: clientEvent.event,
-                            id: clientEvent.id,
-                        });
-                    } catch (e: any) {
-                        console.error(`${opts.logPrefix} Client write error (client disconnected):`, e);
-                        failedCode = FailedCode.CLIENT_DISCONNECTED;
-                        clientDisconnected = true;
                         break;
                     }
+
+                    await writeEventToClient(stream, clientEvent);
                 }
 
-                if (clientDisconnected) break;
+                if (failedCode !== null) break;
             }
-
-            if (clientDisconnected) break;
         }
     } catch (e: any) {
-        console.error(`${opts.logPrefix} Unexpected stream error:`, e);
-        if (failedCode !== FailedCode.CLIENT_DISCONNECTED) {
-            failedCode = FailedCode.UPSTREAM_DISCONNECTED;
+        // 统一的收尾：空闲超时是预期停顿，跳过日志；其余（客户端断开 / 上游读取错误 /
+        // 写客户端失败 / 循环体异常）记日志。失败码秉持「先到先得」：一旦记录就不再覆盖。
+        if (failedCode !== FailedCode.UPSTREAM_TIMEOUT) {
+            console.error(`${SSE_LOOP_LOG_PREFIX} Stream error:`, e);
+        }
+        // 未记录失败码时按错误类型区分：写客户端失败 → 客户端断开；其余 → 上游断开
+        if (!failedCode) {
+            failedCode = e instanceof customError.ClientWriteError
+                ? FailedCode.CLIENT_DISCONNECTED
+                : FailedCode.UPSTREAM_DISCONNECTED;
         }
     }
 
-    c.req.raw.signal.removeEventListener("abort", abortHandler);
-    return { accumulator, firstTokenTime, failedCode, streamErrorData, eventCount };
+    unsubscribeClientAbort();
+    return { accumulator, failedCode };
 }
 
 
@@ -171,9 +180,9 @@ function finalizeStreamResult(
     user: SgUser,
     state: StreamRunResult,
 ): void {
-    const { accumulator, firstTokenTime, failedCode, streamErrorData } = state;
+    let { accumulator, failedCode } = state;
 
-    runInBackground(c, async () => {
+    runInBackgroundUtil.runInBackground(c, async () => {
         // 响应已完整接收（[DONE] / message_stop / response.completed）时优先视为成功：
         // 即使随后客户端或上游连接断开，也可能只是客户端拿到完整结果后提前关闭了连接
         if (accumulator.isCompleted()) {
@@ -183,6 +192,7 @@ function finalizeStreamResult(
             const cost = normalizedUsage
                 ? usageUtils.calculateCost(model, normalizedUsage.promptTokens, normalizedUsage.outputTokens, normalizedUsage.cacheReadTokens)
                 : 0;
+            const firstTokenTime = accumulator.getFirstTokenTime();
 
             await recordService.update(record.id, {
                 response_data: JSON.stringify(fullResponse),
@@ -205,47 +215,23 @@ function finalizeStreamResult(
             return;
         }
 
-        if (
-            failedCode === FailedCode.CLIENT_DISCONNECTED
-            || failedCode === FailedCode.UPSTREAM_DISCONNECTED
-        ) {
-            await recordService.update(record.id, {
-                status: SgRecordStatus.FAILED,
-                failed_code: failedCode,
-                end_at: new Date(),
-            });
-            await requestActivityService.append(record.id, RequestActivityStage.RESULT, "请求中断", {
-                status: SgRecordStatus.FAILED,
-                failed_code: failedCode,
-            }, ActivityLevel.WARN);
-            return;
+        // 失败收尾：先归一化失败码，再按条件补收尾参数，最后统一写入。
+        // ① 未记录失败码（流结束但归因不到具体原因）→ 兜底未知错误
+        if (failedCode === null) {
+            failedCode = FailedCode.UNKNOWN;
         }
 
-        if (failedCode === FailedCode.UPSTREAM_ERROR || accumulator.isErrored()) {
-            const errorData = accumulator.getError() ?? streamErrorData;
-            await recordService.update(record.id, {
-                status: SgRecordStatus.FAILED,
-                failed_code: FailedCode.UPSTREAM_ERROR,
-                response_data: errorData !== null && typeof errorData !== "string"
-                    ? JSON.stringify(errorData) : null,
-                end_at: new Date(),
-            });
-            await requestActivityService.append(record.id, RequestActivityStage.RESULT, "上游返回错误", {
-                status: SgRecordStatus.FAILED,
-                failed_code: FailedCode.UPSTREAM_ERROR,
-            }, ActivityLevel.ERROR);
-            return;
+        // ② 上游返回错误 → 附带 error body（默认 null；仅当错误码与累加器判定一致时填充）
+        let failedOptions: MarkFailedOptions | null = null;
+        if (failedCode === FailedCode.UPSTREAM_ERROR && accumulator.isErrored()) {
+            const errorData = accumulator.getError();
+            failedOptions = {
+                response_data: errorData === null ? null : JSON.stringify(errorData),
+            };
         }
 
-        await recordService.update(record.id, {
-            status: SgRecordStatus.FAILED,
-            failed_code: FailedCode.STREAM_INCOMPLETE,
-            end_at: new Date(),
-        });
-        await requestActivityService.append(record.id, RequestActivityStage.RESULT, "流式响应不完整", {
-            status: SgRecordStatus.FAILED,
-            failed_code: FailedCode.STREAM_INCOMPLETE,
-        }, ActivityLevel.WARN);
+        // ③ 统一收尾（null 表示无附加参数，交由 markFailed 默认处理）
+        await recordService.markFailed(record.id, failedCode, failedOptions);
     });
 }
 
@@ -266,7 +252,21 @@ export async function handleNonStreamResponse(
     upstreamFormat: ApiFormat,
     converter: BaseConverter | null = null,
 ): Promise<Response> {
-    const responseText = await upstreamRes.text();
+    // 非流式 body 读取兜底：readTextWithTimeoutAndAbort 一次性处理「上游断开 / 超时 / 客户端断开」，
+    // 失败抛 BodyReadError（e.failedCode 即原因），异常时显式把 record 标 FAILED。
+    const nonStreamTimeoutMs = await configService.getNumber(ConfigKey.UPSTREAM_NON_STREAM_TIMEOUT_MS);
+
+    let responseText: string;
+    try {
+        responseText = await abortTimeoutUtil.readTextWithTimeoutAndAbort(upstreamRes, nonStreamTimeoutMs, c.req.raw.signal);
+    } catch (e) {
+        const failedCode = e instanceof abortTimeoutUtil.BodyReadError
+            ? e.failedCode
+            : FailedCode.UPSTREAM_DISCONNECTED;
+        await recordService.markFailed(record.id, failedCode);
+        throw e;
+    }
+
     const statusCode = upstreamRes.status as StatusCode;
 
     if (!upstreamRes.ok) {
@@ -381,12 +381,11 @@ export async function handleStreamResponse(
     }
 
     return streamSSE(c, async (stream: SSEStreamingApi) => {
-        const state = await runSseLoop(c, upstreamRes, stream, logStream, {
+        const state = await runSSELoop(c, upstreamRes, stream, logStream, {
             accumulator,
             converter,
-            logPrefix: "[responseHandlerService]",
         });
-        console.log(`[responseHandlerService] Stream ended, events: ${state.eventCount}, completed: ${state.accumulator.isCompleted()}, failedCode: ${state.failedCode}`);
+        console.log(`[responseHandlerService] Stream ended, completed: ${state.accumulator.isCompleted()}, failedCode: ${state.failedCode}`);
         finalizeStreamResult(c, record, model, user, state);
         logStream?.end();
     });

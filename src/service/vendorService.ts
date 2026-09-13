@@ -1,6 +1,6 @@
 import { SgVendor } from "../model/sgVendor";
 import { ApiFormat } from "../constants";
-import customError from "../util/customErrorUtil";
+import customError from "../customError";
 import vendorManager from "../manager/vendorManager";
 
 
@@ -26,13 +26,24 @@ function validateProxyConfig(config?: Record<string, any>): void {
 async function updateVendor(
     vendorId: number,
     data: { type?: string; name?: string; token?: string; urls?: Record<string, string>; config?: Record<string, any> },
+    tenantId?: number,
 ): Promise<SgVendor | null> {
     validateProxyConfig(data.config);
 
-    const vendor = await vendorManager.findById(vendorId);
+    const vendor = tenantId !== undefined
+        ? await vendorManager.findByIdInTenant(vendorId, tenantId)
+        : await vendorManager.findById(vendorId);
 
     if (!vendor) {
         return null;
+    }
+
+    // 供应商名租户内唯一查重（创建 / 更新）
+    if (data.name !== undefined && data.name !== vendor.name) {
+        const dup = await vendorManager.findByName(data.name, tenantId);
+        if (dup && dup.id !== vendorId) {
+            throw new customError.AppError("A vendor with this name already exists", 409);
+        }
     }
 
     const updateData: any = {
@@ -50,7 +61,7 @@ async function updateVendor(
         updateData.config = JSON.stringify(data.config);
     }
 
-    return await vendorManager.update(vendorId, updateData);
+    return await vendorManager.update(vendorId, updateData, tenantId);
 }
 
 async function findVendorByUrl(gatewayUrl: string, protocol: ApiFormat): Promise<number | null> {
