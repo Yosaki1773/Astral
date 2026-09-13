@@ -1,6 +1,8 @@
 import { SgRecord, RECORD_SUMMARY_COLUMNS } from "../model/sgRecord";
-import { SgRecordStatus } from "../constants";
+import { SgRecordStatus, FailedCode, RequestActivityStage, ActivityLevel } from "../constants";
 import billingUtil from "../util/protocol/billingUtil";
+import requestActivityService from "../service/requestActivityService";
+import type { TenantScope } from "../middleware/tenantScopeMiddleware";
 
 interface RecordListOptions {
     status?: string;
@@ -25,6 +27,7 @@ interface RecordCreateData {
     start_at: Date;
     end_at: Date | null;
     cost: number;
+    tenant_id?: number | null;
 }
 
 /**
@@ -37,7 +40,10 @@ type RecordUpdateData = Partial<Omit<SgRecord, "usage">> & {
 
 
 async function create(data: RecordCreateData) {
-    return await SgRecord.query().create(data);
+    return await SgRecord.query().create({
+        ...data,
+        tenant_id: data.tenant_id ?? null,
+    });
 }
 
 /**
@@ -59,8 +65,16 @@ async function findById(recordId: number): Promise<SgRecord | null> {
 }
 
 
-async function latest(limit: number = 10, summaryOnly: boolean = false) {
+async function findByIdInTenant(recordId: number, tenantId: number): Promise<SgRecord | null> {
+    return await SgRecord.query().where("id", recordId).where("tenant_id", tenantId).first();
+}
+
+
+async function latest(limit: number = 10, summaryOnly: boolean = false, tenantId?: number) {
     const q = SgRecord.query().orderBy("id", "desc").limit(limit);
+    if (tenantId !== undefined) {
+        q.where("tenant_id", tenantId);
+    }
     if (summaryOnly) {
         q.select(RECORD_SUMMARY_COLUMNS);
     }
@@ -68,8 +82,12 @@ async function latest(limit: number = 10, summaryOnly: boolean = false) {
 }
 
 
-async function list(options: RecordListOptions) {
+async function list(options: RecordListOptions, tenantId?: number) {
     const q = SgRecord.query();
+
+    if (tenantId !== undefined) {
+        q.where("tenant_id", tenantId);
+    }
 
     if (options.status) {
         q.where("status", options.status);
@@ -98,16 +116,21 @@ async function list(options: RecordListOptions) {
 }
 
 
-async function recent(limit: number) {
-    return (await SgRecord.query()
-        .orderBy("id", "desc")
-        .limit(limit)
-        .get()).all();
+async function recent(limit: number, tenantId?: number) {
+    const q = SgRecord.query();
+    if (tenantId !== undefined) {
+        q.where("tenant_id", tenantId);
+    }
+    return (await q.orderBy("id", "desc").limit(limit).get()).all();
 }
 
 
-async function deleteById(recordId: number): Promise<boolean> {
-    const record = await SgRecord.query().find(recordId);
+async function deleteById(recordId: number, tenantId?: number): Promise<boolean> {
+    const q = SgRecord.query();
+    if (tenantId !== undefined) {
+        q.where("tenant_id", tenantId);
+    }
+    const record = await q.where("id", recordId).first();
     if (!record) {
         return false;
     }
@@ -117,13 +140,71 @@ async function deleteById(recordId: number): Promise<boolean> {
 }
 
 
-async function count(): Promise<number> {
-    return Number(await SgRecord.query().count() || 0);
+async function count(tenantId?: number): Promise<number> {
+    const q = SgRecord.query();
+    if (tenantId !== undefined) {
+        q.where("tenant_id", tenantId);
+    }
+    return Number(await q.count() || 0);
 }
 
 
-async function deleteAll(): Promise<void> {
-    await SgRecord.query().delete();
+async function deleteAll(tenantId?: number): Promise<void> {
+    const q = SgRecord.query();
+    if (tenantId !== undefined) {
+        q.where("tenant_id", tenantId);
+    }
+    await q.delete();
+}
+
+
+/** 按租户取 record id 列表（clear-payload 按租户删除对象存储 key 用） */
+async function listIdsByTenant(tenantId: number): Promise<number[]> {
+    const rows = await SgRecord.query().select("id").where("tenant_id", tenantId).get();
+    return rows.all().map(r => Number(r.id));
+}
+
+
+/**
+ * 把 Date 格式化成 record.start_at 的存储格式（本地时区 'YYYY-MM-DD HH:mm:ss'）。
+ * start_at 经 model datetime cast（dayjs local）写入该格式；raw query 绑定 Date 会存成 epoch 毫秒，
+ * 两者混比会因 SQLite TEXT/NUMERIC 排序规则失真，因此查询必须用同格式字符串比较。
+ */
+function formatDbDatetime(d: Date): string {
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+
+/**
+ * 回收孤儿记录（手动触发）：把「长期未结束」的记录（status 为 init/processing 且 end_at 为空、
+ * start_at 距现在超过 thresholdMs）统一标 FAILED + recovered_orphan，并追加 RESULT 活动。
+ * 返回回收条数。
+ */
+async function recoverOrphans(thresholdMs: number, tenantId?: number): Promise<number> {
+    const cutoff = formatDbDatetime(new Date(Date.now() - thresholdMs));
+    const q = SgRecord.query()
+        .whereIn("status", [SgRecordStatus.INIT, SgRecordStatus.PROCESSING])
+        .whereNull("end_at")
+        .where("start_at", "<", cutoff);
+    if (tenantId !== undefined) {
+        q.where("tenant_id", tenantId);
+    }
+    const orphans = await q.get();
+    const rows = orphans.all();
+
+    for (const row of rows) {
+        await update(Number(row.id), {
+            status: SgRecordStatus.FAILED,
+            failed_code: FailedCode.RECOVERED_ORPHAN,
+            end_at: new Date(),
+        });
+        await requestActivityService.append(Number(row.id), RequestActivityStage.RESULT, "孤儿记录回收", {
+            status: SgRecordStatus.FAILED,
+            failed_code: FailedCode.RECOVERED_ORPHAN,
+        }, ActivityLevel.WARN);
+    }
+    return rows.length;
 }
 
 export { RecordUpdateData };
@@ -133,10 +214,13 @@ export default {
     create,
     update,
     findById,
+    findByIdInTenant,
     latest,
     list,
     recent,
+    listIdsByTenant,
     deleteById,
     count,
     deleteAll,
+    recoverOrphans,
 };

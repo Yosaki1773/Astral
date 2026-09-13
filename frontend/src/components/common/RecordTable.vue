@@ -202,7 +202,12 @@ const FAILED_CODE_LABELS: { [key: string]: string } = {
     client_disconnected: '客户端断开',
     upstream_disconnected: '上游断开',
     stream_incomplete: '流不完整',
-    upstream_error: '上游错误',
+    upstream_error: '上游返回错误',
+    sse_parse_error: 'SSE 解析失败',
+    upstream_timeout: '上游超时',
+    no_available_upstream: '无可用上游',
+    recovered_orphan: '孤儿回收',
+    unknown_error: '未知错误',
 };
 
 function getStatusText(status: string | null, failedCode?: string | null): string {
@@ -248,7 +253,7 @@ function getStatusText(status: string | null, failedCode?: string | null): strin
 
 .token-divider {
     margin: 0 4px;
-    color: #d9d9d9;
+    color: var(--token-divider);
 }
 
 .metric-sub {

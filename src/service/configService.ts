@@ -17,7 +17,18 @@ const CONFIG_DEFAULTS: Record<string, string> = {
     [ConfigKey.MODULE_BILLING_ENABLED]: "true",
     [ConfigKey.MODULE_API_PLAYGROUND_ENABLED]: "true",
     [ConfigKey.MODULE_CLIENT_CONFIG_ENABLED]: "true",
+    [ConfigKey.UPSTREAM_HEADERS_TIMEOUT_MS]: "900000",
+    [ConfigKey.UPSTREAM_NON_STREAM_TIMEOUT_MS]: "180000",
+    [ConfigKey.UPSTREAM_STREAM_IDLE_TIMEOUT_MS]: "180000",
+    [ConfigKey.ORPHAN_RECOVER_THRESHOLD_MS]: "600000",
+    // 多租户隔离默认关闭（存量单租户部署迁移后行为与迁移前一致）
+    [ConfigKey.MULTI_TENANT_ENABLED]: "false",
 };
+
+/** 多租户隔离是否开启（false = 逻辑单租户，所有请求固定 main） */
+async function isMultiTenantEnabled(): Promise<boolean> {
+    return (await getConfig(ConfigKey.MULTI_TENANT_ENABLED)).getBoolean();
+}
 
 function getDefault(name: string): string {
     return CONFIG_DEFAULTS[name] ?? "";
@@ -64,6 +75,11 @@ async function getConfig(name: ConfigKey | string): Promise<ConfigItem> {
 
     cache.set(key, null);
     return new ConfigItem(undefined, defaultValue);
+}
+
+// 便捷读取：直接拿数值（未配置/非法值为 0），免去 getConfig(...).getNumber() 两步
+async function getNumber(name: ConfigKey | string): Promise<number> {
+    return (await getConfig(name)).getNumber();
 }
 
 // 全局计费总开关：module_billing_enabled 为 false 时，后端不预检余额、不扣费
@@ -114,9 +130,11 @@ function clearCache() {
 
 export default {
     getConfig,
+    getNumber,
     setValue,
     getAll,
     updateAll,
     clearCache,
     isModuleBillingEnabled,
+    isMultiTenantEnabled,
 };

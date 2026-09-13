@@ -10,8 +10,10 @@ import type { ProtocolStreamEvent } from "../protocolConverter/protocolTypes";
 export abstract class AccumulatorBase {
     protected completed = false;
     protected errored = false;
-    protected error: unknown | null = null;
+    protected error: object | null = null;
+    protected parseFailed = false;
     protected outputStarted = false;
+    protected outputStartedAt: number | null = null;
 
     /**
      * 接收一条客户端 SSE 事件（协议的累积实现，子类必须实现）
@@ -38,16 +40,35 @@ export abstract class AccumulatorBase {
     /**
      * 标记收到错误事件并保存 payload（子类在识别到错误事件时调用）
      */
-    protected markError(payload: unknown): void {
+    protected markError(payload: object): void {
         this.errored = true;
         this.error = payload;
     }
 
     /**
-     * 标记模型已开始产出内容（子类在识别到首个输出事件时调用）
+     * 标记解析上游内容失败（data 无法解析为合法 JSON）；解析失败也算上游内容错误，
+     * 因此同时置 errored（与 markError 的区别仅是这不携带错误 payload）
+     */
+    protected markParseFailed(): void {
+        this.errored = true;
+        this.parseFailed = true;
+    }
+
+    /**
+     * 标记模型已开始产出内容（子类在识别到首个输出事件时调用）；首次触发时记录时间戳
      */
     protected markOutputStarted(): void {
-        this.outputStarted = true;
+        if (!this.outputStarted) {
+            this.outputStarted = true;
+            this.outputStartedAt = Date.now();
+        }
+    }
+
+    /**
+     * 首个输出 token 到达的时间（用于首 token 延迟）；尚未输出为 null
+     */
+    getFirstTokenTime(): number | null {
+        return this.outputStartedAt;
     }
 
     /**
@@ -65,6 +86,13 @@ export abstract class AccumulatorBase {
     }
 
     /**
+     * 是否解析上游内容失败（data 不是合法 JSON）
+     */
+    isParseFailed(): boolean {
+        return this.parseFailed;
+    }
+
+    /**
      * 模型是否已开始产出内容（用于测量首 token 时间 TTFT）
      */
     isOutputStarted(): boolean {
@@ -74,7 +102,7 @@ export abstract class AccumulatorBase {
     /**
      * 获取流式错误 payload
      */
-    getError(): unknown | null {
+    getError(): object | null {
         return this.error;
     }
 
@@ -85,7 +113,9 @@ export abstract class AccumulatorBase {
         this.completed = false;
         this.errored = false;
         this.error = null;
+        this.parseFailed = false;
         this.outputStarted = false;
+        this.outputStartedAt = null;
     }
 }
 
