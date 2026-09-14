@@ -391,7 +391,7 @@ function handleTest(_upstream: ModelUpstreamFormValue) {
     width: 100%;
 }
 
-..upstream-enabled {
+.upstream-enabled {
     display: flex;
     justify-content: center;
     align-items: center;
