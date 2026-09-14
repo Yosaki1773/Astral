@@ -4,5 +4,11 @@ export const FAILED_CODE_LABELS: Record<string, string> = {
     upstream_disconnected: '上游断开连接',
     stream_incomplete: '流式响应不完整',
     upstream_error: '上游返回错误',
+    sse_parse_error: 'SSE 解析失败',
+    upstream_timeout: '上游响应超时',
     no_available_upstream: '无可用上游',
+    recovered_orphan: '孤儿记录回收',
+    rate_limit_exceeded: '限流拒绝',
+    access_denied: '访问拒绝',
+    unknown_error: '未知错误',
 };

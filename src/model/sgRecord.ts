@@ -129,6 +129,8 @@ class SgRecord extends Model {
     model_id!: number | null;
     vendor_id!: number | null;
     vendor_model_name!: string | null;
+    /** 请求租户作用域冗余（root 取 X-Tenant-ID 视角 / 缺失 main；非 root 取自身 user.tenant_id） */
+    tenant_id!: number | null;
 
     request_data!: string | null;
     response_data!: string | null;
@@ -141,6 +143,9 @@ class SgRecord extends Model {
     /** usage 按类读写（DB 为 TEXT JSON 串，cast 负责转换）；展示口径见 SgRecordUsage.toJSON */
     usage!: SgRecordUsage | null;
     first_token_latency!: number | null;
+    /** 时间字段落库统一为 'YYYY-MM-DD HH:mm:ss' 文本（datetime cast 写入，SQLite/D1 下该列实存 TEXT）。
+     * 查询比较必须用同格式字符串（见 recordManager.formatDbDatetime）；裸 SQL 禁止写入 Date/epoch 数字，
+     * 否则与既有文本行混存储类，SQLite TEXT/NUMERIC 亲和性会让比较失真 */
     start_at!: Date | null;
     end_at!: Date | null;
     cost!: number;
@@ -157,7 +162,7 @@ const RECORD_SUMMARY_COLUMNS = [
     "id", "user_id", "model_id", "vendor_id", "vendor_model_name",
     "status", "failed_code", "client_format", "upstream_format",
     "usage", "first_token_latency", "start_at", "end_at", "cost",
-    "created_at", "updated_at"
+    "created_at", "updated_at", "tenant_id",
 ];
 
 export { SgRecord, SgRecordUsage, RECORD_SUMMARY_COLUMNS };

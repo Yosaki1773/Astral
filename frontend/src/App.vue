@@ -53,6 +53,7 @@ html.dark body {
     --bg-info-item: #fafafa;
     --bg-code: #f6f8fa;
     --bg-code-header: #ffffff;
+    --component-bg: #ffffff;
     --border-color: #e8edf5;
     --border-info-item: #f0f0f0;
     --text-primary: #243247;
@@ -69,6 +70,7 @@ html.dark body {
     --collapse-btn-bg: #f4f7fb;
     --collapse-btn-text: #4f5d75;
     --token-divider: #d9d9d9;
+    --tag-default-border: #d9d9d9;
     --accent-primary: #258fff;
     --accent-primary-hover: #4aa4ff;
     --accent-primary-soft: rgba(37, 143, 255, 0.16);
@@ -109,6 +111,7 @@ html.dark body {
     --bg-info-item: #262626;
     --bg-code: #171717;
     --bg-code-header: #202020;
+    --component-bg: #1f1f1f;
     --border-color: #303030;
     --border-info-item: #303030;
     --text-primary: rgba(255, 255, 255, 0.85);
@@ -125,6 +128,7 @@ html.dark body {
     --collapse-btn-bg: rgba(255, 255, 255, 0.08);
     --collapse-btn-text: rgba(255, 255, 255, 0.65);
     --token-divider: rgba(255, 255, 255, 0.15);
+    --tag-default-border: #424242;
     --accent-primary: #409cff;
     --accent-primary-hover: #66b2ff;
     --accent-primary-soft: rgba(64, 156, 255, 0.20);

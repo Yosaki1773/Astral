@@ -16,13 +16,18 @@ import statsController from "./controller/statsController";
 import balanceController from "./controller/balanceController";
 import configController from "./controller/configController";
 import clientConfigController from "./controller/clientConfigController";
+import ruleController from "./controller/ruleController";
+import tenantController from "./controller/tenantController";
 import configService from "./service/configService";
+import ruleService from "./service/ruleService";
+import tenantService from "./service/tenantService";
 import ormService from "./service/ormService";
 import objectStorageService from "./service/objectStorageService";
 import authMiddleware from "./middleware/authMiddleware";
 import llmApiMiddleware from "./middleware/llmApiMiddleware";
+import tenantScopeMiddleware, { TenantScope } from "./middleware/tenantScopeMiddleware";
 import corsMiddleware from "./middleware/corsMiddleware";
-import customError from "./util/customErrorUtil";
+import customError from "./customError";
 
 interface Env {
     DB: D1Database;
@@ -37,6 +42,7 @@ type Variables = {
     user?: SgUser;
     modelConfig?: SgModel;
     requestBody?: string;
+    tenantScope?: TenantScope;
 };
 
 const dbMiddleware: MiddlewareHandler<{ Bindings: Env }> = async (c, next) => {
@@ -66,6 +72,22 @@ app.use("*", async (c, next) => {
 // 注册数据库中间件（最前面）
 app.use("*", dbMiddleware);
 
+// 租户业务路由统一走 requireTenantAdmin（鉴权 + 注入 user/tenantScope；SPA 前端路由直接放行）。
+// 全局控制面（/tenant、/config.json、/client-config/*、/status.json、/update.json）与 LLM API 不走这里。
+const TENANT_SCOPED_PREFIXES = [
+    "/user/*",
+    "/model/*",
+    "/vendor/*",
+    "/vendor-model/*",
+    "/balance/recharge/*",
+    "/record/*",
+    "/stats/*",
+    "/rule/*",
+];
+for (const prefix of TENANT_SCOPED_PREFIXES) {
+    app.use(prefix, tenantScopeMiddleware.requireTenantAdmin);
+}
+
 // 注册全局错误处理
 app.onError((err, c) => {
     const error = err as unknown as Record<string, unknown>;
@@ -78,6 +100,11 @@ app.onError((err, c) => {
     const apiFormat = c.get("api_format");
     if (apiFormat) {
         const formatted = customError.buildLlmErrorResponse(err as any, apiFormat);
+        // 限流拒绝：附加 Retry-After 头（令牌桶可精确计算补足 1 个令牌的等待秒数，见 rateLimitService）
+        if (error.code === "rate_limit_error") {
+            const retryAfter = (error as unknown as { retryAfterSeconds?: number }).retryAfterSeconds ?? 60;
+            c.header("Retry-After", String(retryAfter));
+        }
         return c.json(formatted, statusCode as any);
     }
 
@@ -134,6 +161,22 @@ app.post("/vendor/:id/test.json", authMiddleware.requireAdmin, vendorController.
 app.put("/vendor/:id", authMiddleware.requireAdmin, vendorController.updateVendor);
 app.delete("/vendor/:id", authMiddleware.requireAdmin, vendorController.deleteVendor);
 
+// Tenant (root 专用；租户管理写操作需多租户功能开关开启)
+// 注：detail 路由用裸 /tenant/:id（与 /vendor/:id、/model/:id 一致）；Hono 对 :id.json 的
+// 参数解析有缺陷（param("id") 取不到值），故不加 .json 后缀
+app.get("/tenant.json", authMiddleware.requireAdmin, tenantController.listTenants);
+app.post("/tenant.json", authMiddleware.requireAdmin, tenantController.createTenant);
+app.get("/tenant/:id", authMiddleware.requireAdmin, tenantController.getTenant);
+app.put("/tenant/:id", authMiddleware.requireAdmin, tenantController.updateTenant);
+app.delete("/tenant/:id", authMiddleware.requireAdmin, tenantController.deleteTenant);
+
+// Rule (需要管理员权限)
+app.get("/rule/list.json", authMiddleware.requireAdmin, ruleController.listRules);
+app.get("/rule/:id", authMiddleware.requireAdmin, ruleController.getRule);
+app.post("/rule/create.json", authMiddleware.requireAdmin, ruleController.createRule);
+app.put("/rule/:id", authMiddleware.requireAdmin, ruleController.updateRule);
+app.delete("/rule/:id", authMiddleware.requireAdmin, ruleController.deleteRule);
+
 // Model (需要管理员权限)
 app.post("/model/create.json", authMiddleware.requireAdmin, modelController.createModel);
 app.post("/model/route-test.json", authMiddleware.requireAdmin, modelController.testModelRoute);
@@ -158,6 +201,7 @@ app.get("/balance/recharge/:id", authMiddleware.requireAdmin, balanceController.
 // Record (需要管理员权限)
 app.get("/record/list.json", authMiddleware.requireAdmin, recordController.listRecords);
 app.get("/record/latest.json", authMiddleware.requireAdmin, recordController.latestRecords);
+app.post("/record/recover-orphans.json", authMiddleware.requireAdmin, recordController.recoverOrphans);
 app.get("/record/:id", authMiddleware.requireAdmin, recordController.getRecord);
 app.delete("/record/clear-payload", authMiddleware.requireAdmin, recordController.clearPayload);
 app.delete("/record/clear-all", authMiddleware.requireAdmin, recordController.clearAll);
@@ -184,6 +228,9 @@ app.delete("/test/cache/clear", async (c) => {
         return c.notFound();
     }
     configService.clearCache();
+    ruleService.invalidateCache();
+    // 测试清表后 main 租户 id 可能变化（SQLite AUTOINCREMENT 不重置），须清 tenantService 缓存
+    tenantService.clearMainTenantCache();
     return c.json({ success: true });
 });
 

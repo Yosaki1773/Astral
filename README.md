@@ -153,7 +153,7 @@ docker run -d \
 
 欢迎加入微信交流群一起讨论：
 
-<img src="./images/wechat_group.jpg" alt="微信交流群" width="50%" />
+<img src="./images/wechat_group.png" alt="微信交流群" width="50%" />
 
 ## 许可证（含署名要求）
 
