@@ -27,6 +27,14 @@
                     <FileTextOutlined />
                     <span>请求记录</span>
                 </a-menu-item>
+                <a-menu-item key="/rule">
+                    <ControlOutlined />
+                    <span>规则管理</span>
+                </a-menu-item>
+                <a-menu-item v-if="authStore.isRoot && tenantStore.multiTenantEnabled && tenantStore.isMainView" key="/tenant">
+                    <ApartmentOutlined />
+                    <span>租户管理</span>
+                </a-menu-item>
                 <a-menu-item v-if="appStore.moduleBillingEnabled" key="/balance">
                     <DollarOutlined />
                     <span>余额管理</span>
@@ -39,11 +47,11 @@
                     <ApiOutlined />
                     <span>接入配置</span>
                 </a-menu-item>
-                <a-menu-item v-if="appStore.moduleClientConfigEnabled" key="/client-manager">
+                <a-menu-item v-if="tenantStore.isMainView && appStore.moduleClientConfigEnabled" key="/client-manager">
                     <RobotOutlined />
                     <span>客户端管理</span>
                 </a-menu-item>
-                <a-menu-item key="/advanced-settings">
+                <a-menu-item v-if="tenantStore.isMainView" key="/advanced-settings">
                     <SettingOutlined />
                     <span>设置</span>
                 </a-menu-item>
@@ -87,14 +95,18 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { DashboardOutlined, TeamOutlined, CloudUploadOutlined, DatabaseOutlined, FileTextOutlined, ExperimentOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ApiOutlined, DollarOutlined, CodeOutlined, RobotOutlined, SettingOutlined } from '@ant-design/icons-vue';
+import { DashboardOutlined, TeamOutlined, CloudUploadOutlined, DatabaseOutlined, FileTextOutlined, ExperimentOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ApiOutlined, DollarOutlined, CodeOutlined, RobotOutlined, SettingOutlined, ControlOutlined, ApartmentOutlined } from '@ant-design/icons-vue';
 import { useAppStore } from '@/stores/app';
+import { useAuthStore } from '@/stores/auth';
+import { useTenantStore } from '@/stores/tenant';
 import { checkUpdate } from '@/api/system';
 import { getConfig } from '@/api/config';
 
 const router = useRouter();
 const route = useRoute();
 const appStore = useAppStore();
+const authStore = useAuthStore();
+const tenantStore = useTenantStore();
 
 const hasUpdate = ref(false);
 const updateUrl = ref('');
@@ -108,6 +120,8 @@ const selectedKeys = computed(() => {
     if (path.startsWith('/vendor')) return ['/vendor'];
     if (path.startsWith('/model')) return ['/model'];
     if (path.startsWith('/record')) return ['/record'];
+    if (path.startsWith('/rule')) return ['/rule'];
+    if (path.startsWith('/tenant')) return ['/tenant'];
     if (path.startsWith('/balance')) return ['/balance'];
     if (path.startsWith('/api-test')) return ['/api-test'];
     if (path.startsWith('/integration')) return ['/integration'];

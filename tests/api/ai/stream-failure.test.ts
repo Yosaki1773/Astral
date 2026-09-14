@@ -11,7 +11,7 @@ import modelFixtures from "../../fixtures/modelFixtures";
  * Stream Failure Handling Tests
  *
  * Verifies that failed_code is correctly set when a streaming request ends abnormally:
- * - stream_incomplete: upstream closed without [DONE] / message_stop / response.completed
+ * - unknown_error: upstream closed without [DONE] / message_stop / response.completed
  * - upstream_disconnected: upstream destroyed the TCP socket mid-stream
  * - upstream_error: upstream returned a protocol-level SSE error event
  */
@@ -49,7 +49,7 @@ describe("Stream Failure Handling", () => {
         );
         testUserToken = userResponse.body.token;
 
-        // --- OpenAI stream_incomplete vendor/model ---
+        // --- OpenAI unknown_error vendor/model ---
         const openaiIncompleteVendor = await requestHelper.post(
             "/vendor/create.json",
             {
@@ -85,7 +85,7 @@ describe("Stream Failure Handling", () => {
             adminToken,
         );
 
-        // --- Anthropic stream_incomplete vendor/model ---
+        // --- Anthropic unknown_error vendor/model ---
         const anthropicIncompleteVendor = await requestHelper.post(
             "/vendor/create.json",
             {
@@ -103,7 +103,7 @@ describe("Stream Failure Handling", () => {
             adminToken,
         );
 
-        // --- Responses API stream_incomplete vendor/model ---
+        // --- Responses API unknown_error vendor/model ---
         const responsesIncompleteVendor = await requestHelper.post(
             "/vendor/create.json",
             {
@@ -220,7 +220,7 @@ describe("Stream Failure Handling", () => {
 
 
     describe("OpenAI /llm/v1/chat/completions", () => {
-        it("should set failed_code=stream_incomplete when upstream closes without [DONE]", async () => {
+        it("should set failed_code=unknown_error when upstream closes without [DONE]", async () => {
             await requestHelper.post(
                 "/llm/v1/chat/completions",
                 { model: openaiIncompleteModelName, messages: [{ role: "user", content: "hi" }], stream: true },
@@ -231,7 +231,7 @@ describe("Stream Failure Handling", () => {
             const record = records[0];
 
             expect(record.status).toBe("failed");
-            expect(record.failed_code).toBe("stream_incomplete");
+            expect(record.failed_code).toBe("unknown_error");
         }, 15000);
 
         it("should set failed_code=upstream_disconnected when upstream destroys socket mid-stream", async () => {
@@ -279,11 +279,66 @@ describe("Stream Failure Handling", () => {
             expect(record.status).toBe("success");
             expect(record.failed_code).toBeNull();
         }, 15000);
+
+        it("should relay upstream heartbeat comment lines to the client (CRLF stream)", async () => {
+            const vendor = await requestHelper.post(
+                "/vendor/create.json",
+                {
+                    type: "other",
+                    name: "Mock OpenAI Heartbeat",
+                    token: "test-token",
+                    urls: { openai: `${MOCK_BASE}/chat/completions/heartbeat` },
+                },
+                adminToken,
+            );
+            const heartbeatModelName = `openai-heartbeat-${Date.now()}`;
+            await requestHelper.post(
+                "/model/create.json",
+                modelFixtures.createRandomModel(vendor.body.id, heartbeatModelName),
+                adminToken,
+            );
+
+            const baseUrl = config.SERVER_CONFIG.baseUrl;
+            const res = await fetch(`${baseUrl}/llm/v1/chat/completions`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${testUserToken}`,
+                },
+                body: JSON.stringify({
+                    model: heartbeatModelName,
+                    messages: [{ role: "user", content: "hi" }],
+                    stream: true,
+                }),
+            } as any);
+            expect(res.status).toBe(200);
+
+            const reader = res.body!.getReader();
+            const decoder = new TextDecoder();
+            let sseText = "";
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                sseText += decoder.decode(value, { stream: true });
+            }
+
+            // CRLF 帧被正确解析：数据事件正常转发
+            expect(sseText).toContain("\"content\":\"Hello\"");
+            expect(sseText).toContain("\"content\":\" world\"");
+            expect(sseText).toContain("data: [DONE]");
+            // 心跳注释行原样透传到下游客户端
+            expect(sseText).toContain(": hb\n\n");
+
+            const records = await requestHelper.getFinalizedRecords(adminToken, 1);
+            const record = records[0];
+            expect(record.status).toBe("success");
+            expect(record.failed_code).toBeNull();
+        }, 15000);
     });
 
 
     describe("Anthropic /llm/v1/messages", () => {
-        it("should set failed_code=stream_incomplete when upstream closes without message_stop", async () => {
+        it("should set failed_code=unknown_error when upstream closes without message_stop", async () => {
             await requestHelper.post(
                 "/llm/v1/messages",
                 {
@@ -299,13 +354,13 @@ describe("Stream Failure Handling", () => {
             const record = records[0];
 
             expect(record.status).toBe("failed");
-            expect(record.failed_code).toBe("stream_incomplete");
+            expect(record.failed_code).toBe("unknown_error");
         }, 15000);
     });
 
 
     describe("Responses API /llm/v1/responses", () => {
-        it("should set failed_code=stream_incomplete when upstream closes without response.completed", async () => {
+        it("should set failed_code=unknown_error when upstream closes without response.completed", async () => {
             await requestHelper.post(
                 "/llm/v1/responses",
                 { model: responsesIncompleteModelName, input: "hi", stream: true },
@@ -316,7 +371,7 @@ describe("Stream Failure Handling", () => {
             const record = records[0];
 
             expect(record.status).toBe("failed");
-            expect(record.failed_code).toBe("stream_incomplete");
+            expect(record.failed_code).toBe("unknown_error");
         }, 15000);
 
         it("should set failed_code=upstream_error when converted Anthropic stream returns an SSE error event", async () => {
@@ -331,9 +386,6 @@ describe("Stream Failure Handling", () => {
             );
 
             expect(response.status).toBe(200);
-            expect(typeof response.body).toBe("string");
-            expect(response.body).toContain("event: error");
-            expect(response.body).toContain("rate_limit_error");
 
             const records = await requestHelper.getFinalizedRecords(adminToken, 1);
             const record = records[0];

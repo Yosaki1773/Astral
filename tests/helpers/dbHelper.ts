@@ -1,11 +1,12 @@
 import Database from "better-sqlite3";
-import { execSync } from "child_process";
+import { execSync, execFileSync } from "child_process";
 import { join } from "path";
 import { existsSync, unlinkSync } from "fs";
 import config from "../config";
 import { DBAdapter } from "../../src/util/db/dbAdapter";
 import { migrate as runMigrations } from "../../src/service/dbMigrationService";
 import configService from "../../src/service/configService";
+import tenantService from "../../src/service/tenantService";
 
 // Worker mode configuration - use test database
 const TEST_DB_NAME = "gt_ai_gateway_test";
@@ -116,12 +117,15 @@ class MySQLTestAdapter implements DBAdapter {
 class WorkerDBAdapter implements DBAdapter {
     exec(sql: string): void {
         const singleLine = sql.replace(/\n/g, " ");
-        runD1Command([`--command="${singleLine.replace(/"/g, '\\"')}"`]);
+        runD1Command(["--command", singleLine]);
     }
 
     query<T>(sql: string): T[] {
+        const singleLine = sql.replace(/\n/g, " ");
         const output = runD1Command([
-            `--json --command="${sql.replace(/"/g, '\\"')}"`,
+            "--json",
+            "--command",
+            singleLine,
         ]);
         try {
             const match = output.match(/\[.*\]/s);
@@ -178,8 +182,11 @@ function createAdapter(): DBAdapter {
  * Helper to run wrangler D1 commands (worker mode only)
  */
 function runD1Command(args: string[]): string {
-    const cmd = `npx wrangler d1 execute ${TEST_DB_NAME} --local --config ${TEST_WRANGLER_CONFIG} ${args.join(" ")}`;
-    return execSync(cmd, { encoding: "utf-8", stdio: "pipe" });
+    return execFileSync(
+        "npx",
+        ["wrangler", "d1", "execute", TEST_DB_NAME, "--local", "--config", TEST_WRANGLER_CONFIG, ...args],
+        { encoding: "utf-8", stdio: "pipe" },
+    );
 }
 
 /**
@@ -194,7 +201,8 @@ function clearD1LocalDatabase(): void {
         // Query all tables
         const output = runD1Command([
             "--json",
-            "--command=\"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%'\"",
+            "--command",
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%'",
         ]);
 
         const match = output.match(/\[.*\]/s);
@@ -213,7 +221,7 @@ function clearD1LocalDatabase(): void {
             }
 
             const dropStatements = tables.map(t => `DROP TABLE IF EXISTS ${t.name};`).join(" ");
-            runD1Command([`--command="${dropStatements}"`]);
+            runD1Command(["--command", dropStatements]);
 
             console.log(`[WORKER_SETUP] Dropped ${tables.length} tables: ${tables.map(t => t.name).join(", ")}`);
         } else {
@@ -233,7 +241,8 @@ function clearD1Tables(): void {
     try {
         const output = runD1Command([
             "--json",
-            "--command=\"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%' AND name != '_migrations'\"",
+            "--command",
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%' AND name != '_migrations'",
         ]);
 
         const match = output.match(/\[.*\]/s);
@@ -253,7 +262,7 @@ function clearD1Tables(): void {
 
             // Combine all DELETE statements into a single command for better performance
             const deleteStatements = tables.map(t => `DELETE FROM ${t.name};`).join(" ");
-            runD1Command([`--command=\"${deleteStatements}\"`]);
+            runD1Command(["--command", deleteStatements]);
 
             console.log(`[WORKER_SETUP] Cleared ${tables.length} tables`);
         }
@@ -303,7 +312,7 @@ async function listBusinessTables(excludeMigrations: boolean): Promise<{ name: s
     }
     const sqliteListSql = `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%'${excludeMigrations ? " AND name != '_migrations'" : ""}`;
     if (isWorkerMode) {
-        const output = runD1Command([`--json --command="${sqliteListSql.replace(/"/g, '\\"')}"`]);
+        const output = runD1Command(["--json", "--command", sqliteListSql]);
         const match = output.match(/\[.*\]/s);
         if (match) {
             const parsed = JSON.parse(match[0]);
@@ -428,6 +437,50 @@ async function cleanup(): Promise<void> {
 }
 
 /**
+ * 清表后重建 main 主租户（多租户隔离）：truncate 会清掉 tenant 表，不重建则
+ * tenantService.getMainTenantId() 失败，所有租户逻辑在测试里不可用。
+ */
+async function seedMainTenant(): Promise<void> {
+    const isMysqlDriver = config.DB_CONFIG.driver === "mysql";
+    const sql = isMysqlDriver
+        ? "INSERT INTO tenant (id, name, description) VALUES (1, 'main', '主租户（自动生成）') ON DUPLICATE KEY UPDATE name='main'"
+        : "INSERT OR REPLACE INTO tenant (id, name, description) VALUES (1, 'main', '主租户（自动生成）')";
+    try {
+        if (isWorkerMode) {
+            runD1Command(["--command", sql]);
+        } else if (isMysqlDriver) {
+            // await 落库后再清缓存，避免 getMainTenantId() 撞上 INSERT 未提交（"Main tenant not found" 偶发）
+            await getMysqlPool().query(sql);
+        } else {
+            adapter!.exec(sql);
+        }
+    } catch (err: unknown) {
+        console.error("Failed to seed main tenant:", err);
+    }
+    tenantService.clearMainTenantCache();
+}
+
+/**
+ * 清除测试服务端进程的缓存（带重试处理 worker 本地重载的连接瞬断）
+ */
+async function clearServerCache(): Promise<void> {
+    for (let i = 0; i < 3; i++) {
+        try {
+            await fetch(`http://127.0.0.1:${config.SERVER_CONFIG.port}/test/cache/clear`, {
+                method: "DELETE",
+            });
+            break;
+        } catch (e) {
+            if (i === 2) {
+                console.error("Failed to clear server cache:", e);
+            } else {
+                await new Promise((r) => setTimeout(r, 100));
+            }
+        }
+    }
+}
+
+/**
  * Truncate tables - remove all data but keep structure
  */
 async function truncate(): Promise<void> {
@@ -439,18 +492,12 @@ async function truncate(): Promise<void> {
     if (isWorkerMode) {
         // In worker mode, clear D1 tables only (admin user created via API)
         clearD1Tables();
-
-        try {
-            await fetch(`http://127.0.0.1:${config.SERVER_CONFIG.port}/test/cache/clear`, {
-                method: "DELETE",
-            });
-        } catch (e) {
-            console.error("Failed to clear worker server cache:", e);
-        }
+        await seedMainTenant();
 
         // Clear in-memory config cache so tests don't leak state across runs
         configService.clearCache();
 
+        await clearServerCache();
         return;
     }
 
@@ -479,17 +526,14 @@ async function truncate(): Promise<void> {
         }
     }
 
+    // 多租户隔离：重建 main 主租户
+    await seedMainTenant();
+
     // Clear config cache to ensure test isolation
     configService.clearCache();
 
     // Also clear the server process's config cache
-    try {
-        await fetch(`http://127.0.0.1:${config.SERVER_CONFIG.port}/test/cache/clear`, {
-            method: "DELETE",
-        });
-    } catch (e) {
-        console.error("Failed to clear server cache:", e);
-    }
+    await clearServerCache();
 
     console.log("Tables truncated");
 }

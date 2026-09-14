@@ -9,9 +9,27 @@ export enum FailedCode {
     CLIENT_DISCONNECTED = "client_disconnected",
     UPSTREAM_DISCONNECTED = "upstream_disconnected",
     STREAM_INCOMPLETE = "stream_incomplete",
+    // 上游明确返回了错误（协议错误事件 / error 事件）
     UPSTREAM_ERROR = "upstream_error",
+    // 网关解析上游 SSE 流失败（上游返回的内容不符合协议，无法解析）
+    SSE_PARSE_ERROR = "sse_parse_error",
     NO_AVAILABLE_UPSTREAM = "no_available_upstream",
     INSUFFICIENT_BALANCE = "insufficient_balance",
+    // 上游在响应头/响应体阶段僵死（长时间无数据），触发超时兜底
+    UPSTREAM_TIMEOUT = "upstream_timeout",
+    // 孤儿记录被手动回收时标记
+    RECOVERED_ORPHAN = "recovered_orphan",
+    // 限流拒绝（429，rate_limit 规则命中且超限）
+    RATE_LIMIT_EXCEEDED = "rate_limit_exceeded",
+    // 访问控制拒绝（403，forbid_access 规则命中）
+    ACCESS_DENIED = "access_denied",
+    // 无法归因的兜底失败原因
+    UNKNOWN = "unknown_error",
+}
+
+export enum RuleType {
+    RATE_LIMIT = "rate_limit",
+    ACCESS_CONTROL = "forbid_access",
 }
 
 export enum RequestActivityStage {
@@ -90,6 +108,9 @@ export enum UserStatus {
 
 export const ROOT_USER_ID = -1;
 
+// 主租户名：自动生成、不可删除；多租户隔离关闭时所有请求固定落入该租户
+export const DEFAULT_TENANT_NAME = "main";
+
 export enum ConfigKey {
     CCH_REWRITE_ENABLED = "cch_rewrite_enabled",
     RESPONSES_PROMPT_CACHE_KEY_ENABLED = "responses_prompt_cache_key_enabled",
@@ -103,4 +124,14 @@ export enum ConfigKey {
     MODULE_BILLING_ENABLED = "module_billing_enabled",
     MODULE_API_PLAYGROUND_ENABLED = "module_api_playground_enabled",
     MODULE_CLIENT_CONFIG_ENABLED = "module_client_config_enabled",
+    // 上游请求「连接 + 响应头」超时（默认 900s = 15 分钟）
+    UPSTREAM_HEADERS_TIMEOUT_MS = "upstream_headers_timeout_ms",
+    // 非流式上游响应体总超时（默认 180s）
+    UPSTREAM_NON_STREAM_TIMEOUT_MS = "upstream_non_stream_timeout_ms",
+    // 流式相邻 chunk 空闲超时（默认 180s）
+    UPSTREAM_STREAM_IDLE_TIMEOUT_MS = "upstream_stream_idle_timeout_ms",
+    // 孤儿记录回收阈值，距 start_at 超过该值且未结束的记录视为孤儿（默认 10 分钟）
+    ORPHAN_RECOVER_THRESHOLD_MS = "orphan_recover_threshold_ms",
+    // 多租户隔离开关：false = 逻辑单租户（所有请求固定 main）；true = 完整多租户隔离
+    MULTI_TENANT_ENABLED = "multi_tenant_enabled",
 }
