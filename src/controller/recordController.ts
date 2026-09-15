@@ -5,18 +5,7 @@ import recordService from "../service/recordService";
 import configService from "../service/configService";
 import { ConfigKey } from "../constants";
 import { parsePaginationQuery } from "../util/paginationUtil";
-
-function normalizeTimestampField(value: unknown): string | number | null {
-    if (value === null || value === undefined) {
-        return null;
-    }
-
-    if (value instanceof Date) {
-        return value.toISOString();
-    }
-
-    return value as string | number;
-}
+import timestampUtil from "../util/timestampUtil";
 
 function serializeRecord(record: SgRecord) {
     const data = record.toData() as Record<string, unknown>;
@@ -24,8 +13,8 @@ function serializeRecord(record: SgRecord) {
 
     return {
         ...data,
-        start_at: normalizeTimestampField(rawAttributes?.start_at ?? data.start_at),
-        end_at: normalizeTimestampField(rawAttributes?.end_at ?? data.end_at),
+        start_at: timestampUtil.toIsoTimestamp(rawAttributes?.start_at ?? data.start_at),
+        end_at: timestampUtil.toIsoTimestamp(rawAttributes?.end_at ?? data.end_at),
     };
 }
 
