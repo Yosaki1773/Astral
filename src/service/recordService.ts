@@ -223,6 +223,52 @@ async function markFailed(
 }
 
 /**
+ * 仅在 record 仍处于活跃状态（INIT/PROCESSING）时标记为失败，并追加 RESULT 活动。
+ * 若记录已处于 SUCCESS/FAILED 等终态，则跳过且不写活动日志，避免覆盖正常结果。
+ * 返回布尔值表示是否实际执行了状态流转。
+ */
+async function markFailedIfActive(
+    recordId: number,
+    failedCode: string | null,
+    options: MarkFailedOptions | null = null,
+): Promise<boolean> {
+    const opts = options ?? {};
+
+    const updateData: RecordUpdateData = {
+        status: SgRecordStatus.FAILED,
+        failed_code: failedCode,
+        end_at: new Date(),
+    };
+    if (opts.response_data !== undefined) {
+        if (await isPayloadRecordingEnabled()) {
+            const payload = await readPayload(recordId);
+            payload.response = opts.response_data ?? null;
+            await writePayload(recordId, payload);
+        }
+    }
+
+    const affected = await recordManager.updateIfActive(recordId, updateData);
+    if (affected <= 0) {
+        return false;
+    }
+
+    const label = opts.message ?? failedCode ?? "请求失败";
+    await requestActivityService.append(
+        recordId,
+        opts.stage ?? RequestActivityStage.RESULT,
+        label,
+        {
+            status: SgRecordStatus.FAILED,
+            ...(failedCode !== null ? { failed_code: failedCode } : {}),
+            ...opts.detail,
+        },
+        opts.level ?? ActivityLevel.ERROR,
+    );
+
+    return true;
+}
+
+/**
  * 记一条失败记录（创建 + 标记 FAILED + 追加 RESULT 活动）。
  * 与 markFailed 一致会写活动日志，保证失败时间线可追溯（如阶段一规则拒绝 403/429）。
  * message 省略时默认用 failedCode 本身作为活动文案。
@@ -260,6 +306,7 @@ export default {
     update,
     latest,
     markFailed,
+    markFailedIfActive,
     recordFailedRequest,
     attachPayload,
     clearPayloads,
