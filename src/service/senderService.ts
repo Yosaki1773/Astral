@@ -353,170 +353,189 @@ async function sendRequest(
     const record = await recordService.create(user.id, modelConfig.id, body, clientFormat, tenantId);
     const recordId = Number(record.id);
 
-    // 每个原始请求一个路由上下文，记录已用后端，避免重试循环
-    const routingContext = new RoutingContext();
-    // 失败切换开关在请求内不变，循环外取一次
-    const failoverEnabled = modelConfig.getRoutingConfig().failover.enabled;
-    let lastFailure: Response | null = null;
-    // 记录最后一次失败对应的失败码：全部上游耗尽时（lastFailure 非空）用其标记 record，区分「限流耗尽」与「网络/HTTP 失败」
-    let lastFailureCode: string | null = null;
+    try {
+        // 每个原始请求一个路由上下文，记录已用后端，避免重试循环
+        const routingContext = new RoutingContext();
+        // 失败切换开关在请求内不变，循环外取一次
+        const failoverEnabled = modelConfig.getRoutingConfig().failover.enabled;
+        let lastFailure: Response | null = null;
+        // 记录最后一次失败对应的失败码：全部上游耗尽时（lastFailure 非空）用其标记 record，区分「限流耗尽」与「网络/HTTP 失败」
+        let lastFailureCode: string | null = null;
 
-    while (true) {
-        let routingResult: ModelRoutingResult;
-        try {
-            routingResult = await routingService.selectUpstream(
-                modelConfig,
-                clientFormat,
-                routingContext,
-                c,   // 从请求 context 读取用户，供负载均衡"按用户随机"模式做种子
-            );
-        } catch (e) {
-            // 路由阶段异常（如配置错误无启用上游）：同样是一次失败请求，不留 init 孤儿记录
-            await recordService.update(recordId, {
-                status: SgRecordStatus.FAILED,
-                end_at: new Date(),
-            });
-            throw e;
-        }
-        // 无可用上游时 selectUpstream 返回上游为 null 的空结果
-        if (!routingResult.hasUpstream()) {
-            // 全部后端已用尽（lastFailure 非空）或一开始就无可用上游，都属于一次真实请求，记 FAILED
-            const exhausted = lastFailure !== null;
-            await recordService.update(recordId, {
-                status: SgRecordStatus.FAILED,
-                ...(exhausted
-                    ? (lastFailureCode ? { failed_code: lastFailureCode } : {})
-                    : { failed_code: FailedCode.NO_AVAILABLE_UPSTREAM }),
-                end_at: new Date(),
-            });
-            await requestActivityService.append(
-                recordId,
-                RequestActivityStage.ROUTING,
-                exhausted ? "所有上游均已尝试，无可用上游" : "无可用上游",
-                exhausted ? undefined : { failed_code: FailedCode.NO_AVAILABLE_UPSTREAM },
-                ActivityLevel.ERROR,
-            );
-            // 全部后端已用尽：统一回传最后一次失败（HTTP 错误原样 / 网络异常 502 响应）
-            if (lastFailure) {
-                return lastFailure;
-            }
-            // 一开始就没有可用上游（全部冷却中 / 未启用）
-            throw new customError.AppError("No available upstream", 503);
-        }
-
-        // vendor 与上游模型/最终格式已在选择阶段解析，结果直接携带，无需再查库
-        const vendor = routingResult.vendor;
-        const vendorModelName = routingResult.vendorModelName;
-        const upstreamFormat = routingResult.upstreamFormat;
-
-        await requestActivityService.append(recordId, RequestActivityStage.ROUTING, "路由选择", {
-            strategy: modelConfig.routing_mode,
-            client: {
-                model: modelConfig.name,
-                format: clientFormat,
-            },
-            upstream: {
-                vendor: vendor.name,
-                vendor_model: vendorModelName,
-                format: upstreamFormat,
-            },
-        });
-
-        // 【阶段二】路由后准入检查（含 vendor_id 的规则，实际路由到的供应商已确定）。
-        // inspect 模式（route-test 纯诊断）跳过，不计数、不受限流/访问控制影响。
-        if (!options.inspect) {
+        while (true) {
+            let routingResult: ModelRoutingResult;
             try {
-                await ruleService.matchAndCheckVendor(
-                    user,
+                routingResult = await routingService.selectUpstream(
                     modelConfig,
-                    vendor,
-                    tenantId ?? -1,
-                    mainTenantId ?? tenantId ?? -1,
+                    clientFormat,
+                    routingContext,
+                    c,   // 从请求 context 读取用户，供负载均衡"按用户随机"模式做种子
                 );
             } catch (e) {
-                if (e instanceof customError.AccessDeniedError) {
-                    // 403：策略性拒绝与供应商无关，不 failover；标记 record FAILED 后抛出，交给 onError 渲染
-                    await recordService.markFailed(recordId, FailedCode.ACCESS_DENIED, {
-                        message: "命中规则被拦截",
-                        detail: {
-                            rule_message: e.message,
-                            rule_id: e.ruleId,
-                            rule_name: e.ruleName,
-                        },
-                    });
+                // 路由阶段异常（如配置错误无启用上游）：同样是一次失败请求，不留 init 孤儿记录
+                await recordService.update(recordId, {
+                    status: SgRecordStatus.FAILED,
+                    end_at: new Date(),
+                });
+                throw e;
+            }
+            // 无可用上游时 selectUpstream 返回上游为 null 的空结果
+            if (!routingResult.hasUpstream()) {
+                // 全部后端已用尽（lastFailure 非空）或一开始就无可用上游，都属于一次真实请求，记 FAILED
+                const exhausted = lastFailure !== null;
+                await recordService.update(recordId, {
+                    status: SgRecordStatus.FAILED,
+                    ...(exhausted
+                        ? (lastFailureCode ? { failed_code: lastFailureCode } : {})
+                        : { failed_code: FailedCode.NO_AVAILABLE_UPSTREAM }),
+                    end_at: new Date(),
+                });
+                await requestActivityService.append(
+                    recordId,
+                    RequestActivityStage.ROUTING,
+                    exhausted ? "所有上游均已尝试，无可用上游" : "无可用上游",
+                    exhausted ? undefined : { failed_code: FailedCode.NO_AVAILABLE_UPSTREAM },
+                    ActivityLevel.ERROR,
+                );
+                // 全部后端已用尽：统一回传最后一次失败（HTTP 错误原样 / 网络异常 502 响应）
+                if (lastFailure) {
+                    return lastFailure;
+                }
+                // 一开始就没有可用上游（全部冷却中 / 未启用）
+                throw new customError.AppError("No available upstream", 503);
+            }
+
+            // vendor 与上游模型/最终格式已在选择阶段解析，结果直接携带，无需再查库
+            const vendor = routingResult.vendor;
+            const vendorModelName = routingResult.vendorModelName;
+            const upstreamFormat = routingResult.upstreamFormat;
+
+            await requestActivityService.append(recordId, RequestActivityStage.ROUTING, "路由选择", {
+                strategy: modelConfig.routing_mode,
+                client: {
+                    model: modelConfig.name,
+                    format: clientFormat,
+                },
+                upstream: {
+                    vendor: vendor.name,
+                    vendor_model: vendorModelName,
+                    format: upstreamFormat,
+                },
+            });
+
+            // 【阶段二】路由后准入检查（含 vendor_id 的规则，实际路由到的供应商已确定）。
+            // inspect 模式（route-test 纯诊断）跳过，不计数、不受限流/访问控制影响。
+            if (!options.inspect) {
+                try {
+                    await ruleService.matchAndCheckVendor(
+                        user,
+                        modelConfig,
+                        vendor,
+                        tenantId ?? -1,
+                        mainTenantId ?? tenantId ?? -1,
+                    );
+                } catch (e) {
+                    if (e instanceof customError.AccessDeniedError) {
+                        // 403：策略性拒绝与供应商无关，不 failover；标记 record FAILED 后抛出，交给 onError 渲染
+                        await recordService.markFailed(recordId, FailedCode.ACCESS_DENIED, {
+                            message: "命中规则被拦截",
+                            detail: {
+                                rule_message: e.message,
+                                ruleId: e.ruleId,
+                                ruleName: e.ruleName,
+                            },
+                        });
+                        throw e;
+                    }
+                    if (e instanceof customError.RateLimitError) {
+                        // 429：视为「该上游繁忙」——failover 开启时把 429 存入 lastFailure 继续尝试下一上游
+                        //（selectUpstream 已 markTried，自动跳过）；关闭时直接返回 429（返回前标记 record FAILED）
+                        if (failoverEnabled) {
+                            lastFailure = buildRateLimitResponse(c, e);
+                            lastFailureCode = FailedCode.RATE_LIMIT_EXCEEDED;
+                            c.status(200);
+                            continue;
+                        }
+                        await recordService.markFailed(recordId, FailedCode.RATE_LIMIT_EXCEEDED, {
+                            message: "命中规则被拦截",
+                            detail: {
+                                rule_message: e.message,
+                                ruleId: e.ruleId,
+                                ruleName: e.ruleName,
+                            },
+                        });
+                        return buildRateLimitResponse(c, e);
+                    }
                     throw e;
                 }
-                if (e instanceof customError.RateLimitError) {
-                    // 429：视为「该上游繁忙」——failover 开启时把 429 存入 lastFailure 继续尝试下一上游
-                    //（selectUpstream 已 markTried，自动跳过）；关闭时直接返回 429（返回前标记 record FAILED）
-                    if (failoverEnabled) {
-                        lastFailure = buildRateLimitResponse(c, e);
-                        lastFailureCode = FailedCode.RATE_LIMIT_EXCEEDED;
-                        c.status(200);
-                        continue;
+            }
+
+            try {
+                const response = await sendRequestToUpstream(
+                    c,
+                    user,
+                    modelConfig,
+                    record,
+                    vendor,
+                    vendorModelName,
+                    clientFormat,
+                    upstreamFormat,
+                    body,
+                );
+
+                // 上游返回非成功响应，转成异常统一走下面的失败处理点，尝试下一个上游
+                if (!response.ok) {
+                    throw new UpstreamResponseError(response);
+                }
+
+                return response;
+            } catch (e: any) {
+                if (c.req.raw.signal.aborted || e instanceof customError.AppError) {
+                    throw e;
+                }
+
+                // 唯一的失败处理点：HTTP 错误与网络异常在这里汇合
+                const httpFailure = e instanceof UpstreamResponseError;
+
+                // 全局冷却：仅上游自身故障才标记（5xx、402 余额不足、网络不可达），
+                // 4xx 请求侧错误不惩罚上游，避免健康上游被无辜跳过（本请求的循环防护由 routingContext 承担）
+                const failureStatus = httpFailure ? e.response.status : null;
+                if (upstreamHealthService.shouldMarkFailure(failureStatus)) {
+                    upstreamHealthService.markFailure(vendor.id, vendorModelName, upstreamFormat);
+                }
+
+                // failover 关闭：HTTP 错误直接回传响应，网络异常抛原始异常，不继续尝试
+                if (!failoverEnabled) {
+                    if (httpFailure) {
+                        return e.response;
                     }
-                    await recordService.markFailed(recordId, FailedCode.RATE_LIMIT_EXCEEDED, {
-                        message: "命中规则被拦截",
-                        detail: {
-                            rule_message: e.message,
-                            rule_id: e.ruleId,
-                            rule_name: e.ruleName,
-                        },
-                    });
-                    return buildRateLimitResponse(c, e);
+                    throw e;
                 }
-                throw e;
+
+                // 切换动作由时间线自然体现（上一次尝试的结果 → 下一次路由选择），不再单独记 failover 活动
+                lastFailure = httpFailure
+                    ? e.response
+                    : buildUpstreamFailureResponse(c, e);
+                c.status(200);   // 复位上下文状态，避免上次失败的 error 状态影响下一次尝试
             }
         }
-
+    } catch (error) {
         try {
-            const response = await sendRequestToUpstream(
-                c,
-                user,
-                modelConfig,
-                record,
-                vendor,
-                vendorModelName,
-                clientFormat,
-                upstreamFormat,
-                body,
+            await recordService.markFailedIfActive(
+                recordId,
+                null,
+                {
+                    message: "请求处理异常",
+                    detail: {
+                        error: error instanceof Error ? error.message : String(error),
+                    },
+                },
             );
-
-            // 上游返回非成功响应，转成异常统一走下面的失败处理点，尝试下一个上游
-            if (!response.ok) {
-                throw new UpstreamResponseError(response);
-            }
-
-            return response;
-        } catch (e: any) {
-            if (c.req.raw.signal.aborted || e instanceof customError.AppError) {
-                throw e;
-            }
-
-            // 唯一的失败处理点：HTTP 错误与网络异常在这里汇合
-            const httpFailure = e instanceof UpstreamResponseError;
-
-            // 全局冷却：仅上游自身故障才标记（5xx、402 余额不足、网络不可达），
-            // 4xx 请求侧错误不惩罚上游，避免健康上游被无辜跳过（本请求的循环防护由 routingContext 承担）
-            const failureStatus = httpFailure ? e.response.status : null;
-            if (upstreamHealthService.shouldMarkFailure(failureStatus)) {
-                upstreamHealthService.markFailure(vendor.id, vendorModelName, upstreamFormat);
-            }
-
-            // failover 关闭：HTTP 错误直接回传响应，网络异常抛原始异常，不继续尝试
-            if (!failoverEnabled) {
-                if (httpFailure) {
-                    return e.response;
-                }
-                throw e;
-            }
-
-            // 切换动作由时间线自然体现（上一次尝试的结果 → 下一次路由选择），不再单独记 failover 活动
-            lastFailure = httpFailure
-                ? e.response
-                : buildUpstreamFailureResponse(c, e);
-            c.status(200);   // 复位上下文状态，避免上次失败的 error 状态影响下一次尝试
+        } catch (cleanupError) {
+            console.error("[senderService] Failed to mark active record failed on error:", cleanupError);
         }
+
+        throw error;
     }
 }
 

@@ -51,17 +51,35 @@ async function create(data: RecordCreateData) {
     });
 }
 
+function sanitizeUpdateData(data: RecordUpdateData) {
+    const { response_data: _omit, ...tableData } = data as any;
+    if (tableData.cost !== undefined) {
+        tableData.cost = billingUtil.toUnits(tableData.cost);
+    }
+    return tableData;
+}
+
 /**
  * 更新 record 表字段。response_data 不是 record 表列（存在对象存储），写入表前必须剥离。
  * cost 以"元"传入；裸 query().update() 不走模型 cast，这里手动换算成整数微元存储；
  * usage 同样直接以存储串写入（见 RecordUpdateData）。
  */
 async function update(recordId: number, data: RecordUpdateData) {
-    const { response_data: _omit, ...tableData } = data as any;
-    if (tableData.cost !== undefined) {
-        tableData.cost = billingUtil.toUnits(tableData.cost);
-    }
+    const tableData = sanitizeUpdateData(data);
     return SgRecord.query().where("id", recordId).update(tableData);
+}
+
+/**
+ * 仅在记录处于活跃状态（INIT 或 PROCESSING）时更新，返回受影响行数。
+ * 供异常收尾等场景使用，防止覆盖已进入 SUCCESS/FAILED 的终态记录。
+ */
+async function updateIfActive(recordId: number, data: RecordUpdateData): Promise<number> {
+    const tableData = sanitizeUpdateData(data);
+    const affected = await SgRecord.query()
+        .where("id", recordId)
+        .whereIn("status", [SgRecordStatus.INIT, SgRecordStatus.PROCESSING])
+        .update(tableData);
+    return Number(affected || 0);
 }
 
 
@@ -224,6 +242,7 @@ export { RecordUpdateData };
 export default {
     create,
     update,
+    updateIfActive,
     findById,
     findByIdInTenant,
     latest,

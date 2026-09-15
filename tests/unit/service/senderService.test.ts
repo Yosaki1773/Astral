@@ -5,13 +5,60 @@
  * 覆盖正常转换、格式匹配透传、错误处理等场景。
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import senderService from "../../../src/service/senderService";
 import usageUtils from "../../../src/util/protocol/usageUtil";
 import protocolUtils from "../../../src/util/protocol/protocolUtil";
 import { ConverterFactory } from "../../../src/util/protocolConverter/ConverterFactory";
-import { ApiFormat } from "../../../src/constants";
+import { ApiFormat, SgRecordStatus } from "../../../src/constants";
 import customError from "../../../src/customError";
+import configService from "../../../src/service/configService";
+import recordService from "../../../src/service/recordService";
+import routingService from "../../../src/service/routingService/core";
+
+describe("sendRequest lifecycle cleanup", () => {
+    it("marks an active record failed when post-create setup throws", async () => {
+        const originalError = new Error("post-create setup failed");
+        const record = { id: 42, status: SgRecordStatus.INIT } as any;
+        const createSpy = vi.spyOn(recordService, "create").mockResolvedValue(record);
+        const cleanupSpy = vi.spyOn(recordService, "markFailedIfActive").mockResolvedValue(true);
+        vi.spyOn(configService, "isModuleBillingEnabled").mockResolvedValue(false);
+        vi.spyOn(routingService, "selectUpstream").mockImplementation(async () => {
+            throw originalError;
+        });
+
+        const modelConfig = {
+            id: 1,
+            name: "test-model",
+            routing_mode: "first_available",
+            hasBilling: () => false,
+            getRoutingConfig: () => ({ failover: { enabled: true } }),
+        } as any;
+        const context = {
+            get: vi.fn((key: string) => (key === "user" ? { id: 1 } : undefined)),
+            req: { raw: { signal: new AbortController().signal } },
+        } as any;
+        const user = { id: 1, balance: 0 } as any;
+
+        await expect(senderService.sendRequest(
+            context,
+            user,
+            modelConfig,
+            ApiFormat.OPENAI,
+            "{}",
+        )).rejects.toThrow("post-create setup failed");
+
+        expect(createSpy).toHaveBeenCalledOnce();
+        expect(cleanupSpy).toHaveBeenCalledWith(
+            42,
+            null,
+            expect.objectContaining({ message: "请求处理异常" }),
+        );
+
+        vi.restoreAllMocks();
+    });
+});
+
 
 function convertRequestBody(body: string, clientFormat: ApiFormat, upstreamFormat: ApiFormat): string {
     if (clientFormat !== upstreamFormat && (clientFormat === ApiFormat.RESPONSES || upstreamFormat === ApiFormat.RESPONSES)) {
