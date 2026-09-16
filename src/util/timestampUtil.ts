@@ -23,19 +23,25 @@ function toIsoTimestamp(value: unknown): string | number | null {
     if (typeof value === "string") {
         const matched = NAIVE_DATETIME_PATTERN.exec(value);
         if (matched) {
-            // 多参数 Date 构造按本地时区解释，与 datetime cast 写入时所用时区一致
+            const year = Number(matched[1]);
+            const month = Number(matched[2]);
+            const day = Number(matched[3]);
+            const hour = Number(matched[4]);
+            const minute = Number(matched[5]);
+            const second = Number(matched[6]);
             const milliseconds = matched[7] ? Number(matched[7].padEnd(3, "0")) : 0;
-            const parsed = new Date(
-                Number(matched[1]),
-                Number(matched[2]) - 1,
-                Number(matched[3]),
-                Number(matched[4]),
-                Number(matched[5]),
-                Number(matched[6]),
-                milliseconds,
-            );
-            // 非法日期（如 2026-13-45）原样返回，避免 toISOString 抛异常影响整个接口
-            if (!Number.isNaN(parsed.getTime())) {
+            // 多参数 Date 构造按本地时区解释，与 datetime cast 写入时所用时区一致
+            const parsed = new Date(year, month - 1, day, hour, minute, second, milliseconds);
+            // 非法日期（如 2026-13-45）原样返回，避免 toISOString 抛异常影响整个接口。
+            // 越界分量不会构造出 NaN 而是进位成另一个合法日期，因此用「回读分量与输入一致」判定
+            if (
+                parsed.getFullYear() === year &&
+                parsed.getMonth() === month - 1 &&
+                parsed.getDate() === day &&
+                parsed.getHours() === hour &&
+                parsed.getMinutes() === minute &&
+                parsed.getSeconds() === second
+            ) {
                 return parsed.toISOString();
             }
         }

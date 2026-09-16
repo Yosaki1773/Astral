@@ -22,6 +22,8 @@ describe("sendRequest lifecycle cleanup", () => {
         const record = { id: 42, status: SgRecordStatus.INIT } as any;
         const createSpy = vi.spyOn(recordService, "create").mockResolvedValue(record);
         const cleanupSpy = vi.spyOn(recordService, "markFailedIfActive").mockResolvedValue(true);
+        // 路由阶段 catch 会先把 record 标记 FAILED 再重抛，单测进程无数据库连接，一并 mock 掉
+        vi.spyOn(recordService, "update").mockResolvedValue(1);
         vi.spyOn(configService, "isModuleBillingEnabled").mockResolvedValue(false);
         vi.spyOn(routingService, "selectUpstream").mockImplementation(async () => {
             throw originalError;
