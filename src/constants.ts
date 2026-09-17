@@ -132,6 +132,8 @@ export enum ConfigKey {
     UPSTREAM_STREAM_IDLE_TIMEOUT_MS = "upstream_stream_idle_timeout_ms",
     // 孤儿记录回收阈值，距 start_at 超过该值且未结束的记录视为孤儿（默认 10 分钟）
     ORPHAN_RECOVER_THRESHOLD_MS = "orphan_recover_threshold_ms",
+    // 上游失败全局冷却开关：true = 上游 5xx/402/网络不可达后 30s 内跳过该上游；false = 每次请求都真实尝试上游
+    UPSTREAM_COOLDOWN_ENABLED = "upstream_cooldown_enabled",
     // 多租户隔离开关：false = 逻辑单租户（所有请求固定 main）；true = 完整多租户隔离
     MULTI_TENANT_ENABLED = "multi_tenant_enabled",
 }

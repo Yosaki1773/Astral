@@ -381,6 +381,9 @@ async function clearDatabase(shouldCleanup: boolean = true): Promise<void> {
     } else {
         console.log("Cleaning up test database...");
         await cleanup();
+        // 先关闭 globalSetup 进程自己持有的 better-sqlite3 句柄：
+        // Windows 下句柄未释放时 unlinkSync 会报 EBUSY
+        await close();
         removeDatabaseFile();
         console.log("[CLEAR_DATABASE] Database cleaned up and file deleted");
     }

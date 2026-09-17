@@ -358,6 +358,8 @@ async function sendRequest(
         const routingContext = new RoutingContext();
         // 失败切换开关在请求内不变，循环外取一次
         const failoverEnabled = modelConfig.getRoutingConfig().failover.enabled;
+        // 上游失败全局冷却开关同样请求内不变：false 时失败不标记冷却，每次请求都真实尝试上游
+        const cooldownEnabled = await configService.isUpstreamCooldownEnabled();
         let lastFailure: Response | null = null;
         // 记录最后一次失败对应的失败码：全部上游耗尽时（lastFailure 非空）用其标记 record，区分「限流耗尽」与「网络/HTTP 失败」
         let lastFailureCode: string | null = null;
@@ -500,7 +502,7 @@ async function sendRequest(
                 // 全局冷却：仅上游自身故障才标记（5xx、402 余额不足、网络不可达），
                 // 4xx 请求侧错误不惩罚上游，避免健康上游被无辜跳过（本请求的循环防护由 routingContext 承担）
                 const failureStatus = httpFailure ? e.response.status : null;
-                if (upstreamHealthService.shouldMarkFailure(failureStatus)) {
+                if (cooldownEnabled && upstreamHealthService.shouldMarkFailure(failureStatus)) {
                     upstreamHealthService.markFailure(vendor.id, vendorModelName, upstreamFormat);
                 }
 

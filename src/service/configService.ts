@@ -23,6 +23,8 @@ const CONFIG_DEFAULTS: Record<string, string> = {
     [ConfigKey.ORPHAN_RECOVER_THRESHOLD_MS]: "600000",
     // 多租户隔离默认关闭（存量单租户部署迁移后行为与迁移前一致）
     [ConfigKey.MULTI_TENANT_ENABLED]: "false",
+    // 上游失败全局冷却默认关闭：每次请求都真实尝试上游，由 failover 兜底
+    [ConfigKey.UPSTREAM_COOLDOWN_ENABLED]: "false",
 };
 
 /** 多租户隔离是否开启（false = 逻辑单租户，所有请求固定 main） */
@@ -87,6 +89,11 @@ async function isModuleBillingEnabled(): Promise<boolean> {
     return (await getConfig(ConfigKey.MODULE_BILLING_ENABLED)).getBoolean();
 }
 
+// 上游失败全局冷却开关：false 时失败不标记冷却，每次请求都真实尝试上游
+async function isUpstreamCooldownEnabled(): Promise<boolean> {
+    return (await getConfig(ConfigKey.UPSTREAM_COOLDOWN_ENABLED)).getBoolean();
+}
+
 async function setValue(name: ConfigKey | string, value: string): Promise<SgConfig> {
     const key = name as string;
     const strValue = String(value);
@@ -137,4 +144,5 @@ export default {
     clearCache,
     isModuleBillingEnabled,
     isMultiTenantEnabled,
+    isUpstreamCooldownEnabled,
 };
