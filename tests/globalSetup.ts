@@ -1,5 +1,5 @@
 import { join } from "path";
-import { spawn, ChildProcess } from "child_process";
+import { spawn, spawnSync, ChildProcess } from "child_process";
 import { existsSync, unlinkSync, mkdirSync, createWriteStream } from "fs";
 import config from "./config";
 import dbHelper from "./helpers/dbHelper";
@@ -25,7 +25,7 @@ let mockLogStream: ReturnType<typeof createWriteStream> | null = null;
 function globalCleanup(): void {
     console.log("[CLEANUP] Interrupted, stopping servers...");
     if (testServerProcess) {
-        testServerProcess.kill("SIGTERM");
+        killServerProcessTree();
     }
     if (mockServerProcess) {
         mockServer.stopMockServer(mockServerProcess);
@@ -218,6 +218,8 @@ function startTestServer(): Promise<void> {
             env,
             stdio: ["ignore", "pipe", "pipe"],
             shell: process.platform === "win32",
+            // POSIX：设为独立进程组，stopTestServer 可向 -pid 整组发信号终结子孙进程
+            detached: process.platform !== "win32",
         });
 
         let serverStarted = false;
@@ -343,19 +345,43 @@ function startTestServer(): Promise<void> {
     });
 }
 
+/**
+ * 终结测试服务器整棵进程树。
+ * Windows：kill() 只终结直接子进程（cmd.exe），孙进程（npx→tsx→local.ts）
+ * 会成为孤儿并持有 test.db 句柄，导致 unlinkSync 报 EBUSY；用 taskkill /T 整树强杀。
+ * POSIX：spawn 时 detached 使子进程成为组长，子孙继承 pgid，向 -pid 发信号整组终结。
+ */
+function killServerProcessTree(signal: "SIGTERM" | "SIGKILL" = "SIGTERM"): void {
+    const pid = testServerProcess?.pid;
+    if (!pid) {
+        return;
+    }
+
+    if (process.platform === "win32") {
+        spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
+        return;
+    }
+
+    try {
+        process.kill(-pid, signal);
+    } catch {
+        // ESRCH：进程组已退出
+    }
+}
+
 function stopTestServer(): Promise<void> {
     return new Promise((resolve) => {
         if (testServerProcess) {
             console.log("Stopping test server...");
 
             // Try graceful shutdown with SIGTERM
-            testServerProcess.kill("SIGTERM");
+            killServerProcessTree("SIGTERM");
 
             // Wait for process to exit (up to 5 seconds)
             const timeout = setTimeout(() => {
                 // If process doesn't exit, use SIGKILL as last resort
                 console.log("[CLEANUP] Force killing test server...");
-                testServerProcess!.kill("SIGKILL");
+                killServerProcessTree("SIGKILL");
                 testServerProcess = null;
                 resolve();
             }, 5000);

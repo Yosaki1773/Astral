@@ -118,6 +118,12 @@
                                     下载
                                 </a-button>
                             </a-space>
+                            <a-space v-else-if="activeRequestTab === 'visual'">
+                                <a-button type="link" size="small" @click="openVisualInNewTab">
+                                    <template #icon><ExportOutlined /></template>
+                                    在新标签页打开
+                                </a-button>
+                            </a-space>
                             <a-space v-else-if="activeRequestTab === 'response_json'">
                                 <a-button type="link" size="small" @click="isResponseExpanded = !isResponseExpanded">
                                     {{ isResponseExpanded ? '收起' : '展开' }}
@@ -193,12 +199,13 @@
 <script setup lang="ts">
 import { computed, onUnmounted, watch, ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { DownloadOutlined, ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons-vue';
+import { DownloadOutlined, ArrowUpOutlined, ArrowDownOutlined, ExportOutlined } from '@ant-design/icons-vue';
 import { useRecordStore } from '@/stores/record';
 import { deleteRecord } from '@/api/record';
 import { formatDate } from '@/utils/format';
 import { convertResponsesRequest, convertResponsesResponse } from '@/utils/responsesConverter';
 import JsonDownload from '@/utils/jsonDownload';
+import { isTauri } from '@/utils/platform';
 import JsonViewer from '@/components/common/JsonViewer.vue';
 import ActivityTimeline from '@/components/common/ActivityTimeline.vue';
 import { FAILED_CODE_LABELS } from '@/constants/record';
@@ -273,6 +280,30 @@ function onIframeLoad() {
             }
         }, 300);
     }
+}
+
+function openVisualInNewTab() {
+    if (getMessageCount(conversationData.value) <= 0) {
+        message.warning('当前没有可展示的对话数据');
+        return;
+    }
+
+    // Tauri 主窗口走自定义协议（tauri://localhost），与后端不同源：
+    // localStorage 无法跨源共享，系统浏览器也无法解析相对路径，因此桌面模式下不提供此能力
+    if (isTauri()) {
+        message.warning('桌面模式下暂不支持在新标签页打开，请在浏览器中访问管理界面使用');
+        return;
+    }
+
+    const sessionKey = `data_viewer_session_${Date.now()}`;
+    try {
+        localStorage.setItem(sessionKey, JSON.stringify(conversationData.value));
+    } catch {
+        message.error('写入本地存储失败，无法在新标签页打开');
+        return;
+    }
+
+    window.open(`/data_viewer/dist/index.html?session_key=${encodeURIComponent(sessionKey)}`, '_blank', 'noopener,noreferrer');
 }
 
 watch(conversationData, (newVal) => {

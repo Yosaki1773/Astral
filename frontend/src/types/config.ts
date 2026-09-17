@@ -6,6 +6,7 @@ export interface ConfigMap {
     stream_log_enabled: string;
     record_payload_enabled: string;
     record_payload_storage: string;
+    upstream_cooldown_enabled: string;
     [key: string]: string;
 }
 
@@ -17,5 +18,6 @@ export interface UpdateConfigRequest {
     stream_log_enabled?: string;
     record_payload_enabled?: string;
     record_payload_storage?: string;
+    upstream_cooldown_enabled?: string;
     [key: string]: string | undefined;
 }

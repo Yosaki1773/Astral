@@ -16,6 +16,14 @@ describe("Model multi-upstream routing", () => {
         await dbHelper.truncate();
         await setupAdminUser();
 
+        // 本文件多数用例依赖全局冷却行为（默认关闭），先显式开启；
+        // 默认关闭（不标记冷却）的行为在文件末尾的专属用例中验证
+        await requestHelper.put(
+            "/config.json",
+            { upstream_cooldown_enabled: "true" },
+            adminToken,
+        );
+
         const primary = await requestHelper.post(
             "/vendor/create.json",
             vendorFixtures.VENDOR_FIXTURES.openai(),
@@ -1158,5 +1166,80 @@ describe("Model multi-upstream routing", () => {
         expect(secondResponse.status).toBe(503);
         expect(secondResponse.body.error.message).toBe("Mock upstream unavailable");
         expect(secondResponse.body.error.message).not.toContain("No available upstream");
+    });
+
+    it("does not cool down by default: retry hits the upstream again after a 5xx failure", async () => {
+        // 冷却默认关闭：把开关置回 false，验证失败后第二次请求仍真实尝试上游
+        await requestHelper.put(
+            "/config.json",
+            { upstream_cooldown_enabled: "false" },
+            adminToken,
+        );
+
+        const failingVendor = await requestHelper.post(
+            "/vendor/create.json",
+            {
+                ...vendorFixtures.VENDOR_FIXTURES.openai(),
+                name: "Default no cooldown upstream",
+                urls: { openai: "http://localhost:9999/chat/completions/unavailable" },
+            },
+            adminToken,
+        );
+        const failingModel = await requestHelper.post(
+            `/vendor/${failingVendor.body.id}/model/add.json`,
+            { model_id: "default-no-cool-model" },
+            adminToken,
+        );
+        const model = await requestHelper.post(
+            "/model/create.json",
+            {
+                name: "default-no-cool-model",
+                routing_mode: "first_available",
+                routing_config: {
+                    upstreams: [
+                        {
+                            vendor_id: failingVendor.body.id,
+                            vendor_model_id: failingModel.body.id,
+                            enabled: true,
+                        },
+                    ],
+                    failover: { enabled: false },
+                },
+            },
+            adminToken,
+        );
+        expect(model.status).toBe(200);
+
+        const user = await requestHelper.post(
+            "/user/create.json",
+            mockHelper.generateUser(),
+            adminToken,
+        );
+
+        const firstResponse = await requestHelper.post(
+            "/llm/v1/chat/completions",
+            mockHelper.generateOpenAIChatRequest({ model: "default-no-cool-model", stream: false }),
+            user.body.token,
+        );
+        expect(firstResponse.status).toBe(503);
+        expect(firstResponse.body.error.message).toBe("Mock upstream unavailable");
+
+        // 冷却未标记：第二次请求仍真实尝试上游，回传上游错误而非"无可用上游"
+        const secondResponse = await requestHelper.post(
+            "/llm/v1/chat/completions",
+            mockHelper.generateOpenAIChatRequest({ model: "default-no-cool-model", stream: false }),
+            user.body.token,
+        );
+        expect(secondResponse.status).toBe(503);
+        expect(secondResponse.body.error.message).toBe("Mock upstream unavailable");
+        expect(secondResponse.body.error.message).not.toContain("No available upstream");
+
+        // 两条 record 都是上游失败，不存在 no_available_upstream 失败码
+        const records = await requestHelper.get(
+            `/record/list.json?model_ids=${model.body.id}`,
+            adminToken,
+        );
+        expect(records.body.total).toBe(2);
+        expect(records.body.list.every((record: any) => record.failed_code !== "no_available_upstream")).toBe(true);
     });
 });

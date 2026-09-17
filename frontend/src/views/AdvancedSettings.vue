@@ -93,6 +93,19 @@
                                 />
                             </div>
                         </div>
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <div class="setting-title">上游故障冷却</div>
+                                <div class="setting-desc">启用后，上游发生 5xx、余额不足或网络不可达时，30 秒内后续请求将直接跳过该上游；关闭后每次请求都会真实尝试上游，由失败切换兜底</div>
+                            </div>
+                            <div class="setting-action">
+                                <a-switch
+                                    :checked="form.upstream_cooldown_enabled"
+                                    @change="form.upstream_cooldown_enabled = $event as boolean"
+                                    :disabled="saving"
+                                />
+                            </div>
+                        </div>
                     </div>
                 </a-tab-pane>
 
@@ -312,6 +325,7 @@ const originalConfig = reactive({
     cch_rewrite_enabled: false,
     responses_prompt_cache_key_enabled: false,
     claude_code_tracking_rewrite_enabled: true,
+    upstream_cooldown_enabled: false,
     stream_log_enabled: false,
     record_payload_enabled: true,
     record_payload_storage: 'auto' as RecordPayloadStorage,
@@ -326,6 +340,7 @@ const form = reactive({
     cch_rewrite_enabled: false,
     responses_prompt_cache_key_enabled: false,
     claude_code_tracking_rewrite_enabled: true,
+    upstream_cooldown_enabled: false,
     stream_log_enabled: false,
     record_payload_enabled: true,
     record_payload_storage: 'auto' as RecordPayloadStorage,
@@ -340,6 +355,7 @@ const isDirty = computed(() => {
     return form.cch_rewrite_enabled !== originalConfig.cch_rewrite_enabled ||
            form.responses_prompt_cache_key_enabled !== originalConfig.responses_prompt_cache_key_enabled ||
            form.claude_code_tracking_rewrite_enabled !== originalConfig.claude_code_tracking_rewrite_enabled ||
+           form.upstream_cooldown_enabled !== originalConfig.upstream_cooldown_enabled ||
            form.stream_log_enabled !== originalConfig.stream_log_enabled ||
            form.record_payload_enabled !== originalConfig.record_payload_enabled ||
            form.record_payload_storage !== originalConfig.record_payload_storage ||
@@ -377,6 +393,9 @@ async function loadConfig(): Promise<void> {
         form.claude_code_tracking_rewrite_enabled = config.claude_code_tracking_rewrite_enabled !== "false";
         originalConfig.claude_code_tracking_rewrite_enabled = config.claude_code_tracking_rewrite_enabled !== "false";
 
+        form.upstream_cooldown_enabled = config.upstream_cooldown_enabled === "true";
+        originalConfig.upstream_cooldown_enabled = config.upstream_cooldown_enabled === "true";
+
         form.stream_log_enabled = config.stream_log_enabled === "true";
         originalConfig.stream_log_enabled = config.stream_log_enabled === "true";
 
@@ -409,6 +428,7 @@ function cancelChanges() {
     form.cch_rewrite_enabled = originalConfig.cch_rewrite_enabled;
     form.responses_prompt_cache_key_enabled = originalConfig.responses_prompt_cache_key_enabled;
     form.claude_code_tracking_rewrite_enabled = originalConfig.claude_code_tracking_rewrite_enabled;
+    form.upstream_cooldown_enabled = originalConfig.upstream_cooldown_enabled;
     form.stream_log_enabled = originalConfig.stream_log_enabled;
     form.record_payload_enabled = originalConfig.record_payload_enabled;
     form.record_payload_storage = originalConfig.record_payload_storage;
@@ -481,6 +501,7 @@ async function saveConfig() {
             cch_rewrite_enabled: form.cch_rewrite_enabled ? "true" : "false",
             responses_prompt_cache_key_enabled: form.responses_prompt_cache_key_enabled ? "true" : "false",
             claude_code_tracking_rewrite_enabled: form.claude_code_tracking_rewrite_enabled ? "true" : "false",
+            upstream_cooldown_enabled: form.upstream_cooldown_enabled ? "true" : "false",
             stream_log_enabled: form.stream_log_enabled ? "true" : "false",
             record_payload_enabled: form.record_payload_enabled ? "true" : "false",
             record_payload_storage: form.record_payload_storage,
@@ -494,6 +515,7 @@ async function saveConfig() {
         originalConfig.cch_rewrite_enabled = form.cch_rewrite_enabled;
         originalConfig.responses_prompt_cache_key_enabled = form.responses_prompt_cache_key_enabled;
         originalConfig.claude_code_tracking_rewrite_enabled = form.claude_code_tracking_rewrite_enabled;
+        originalConfig.upstream_cooldown_enabled = form.upstream_cooldown_enabled;
         originalConfig.stream_log_enabled = form.stream_log_enabled;
         originalConfig.record_payload_enabled = form.record_payload_enabled;
         originalConfig.record_payload_storage = form.record_payload_storage;
