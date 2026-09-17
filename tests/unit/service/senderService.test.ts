@@ -25,6 +25,7 @@ describe("sendRequest lifecycle cleanup", () => {
         // 路由阶段 catch 会先把 record 标记 FAILED 再重抛，单测进程无数据库连接，一并 mock 掉
         vi.spyOn(recordService, "update").mockResolvedValue(1);
         vi.spyOn(configService, "isModuleBillingEnabled").mockResolvedValue(false);
+        vi.spyOn(configService, "isUpstreamCooldownEnabled").mockResolvedValue(false);
         vi.spyOn(routingService, "selectUpstream").mockImplementation(async () => {
             throw originalError;
         });
