@@ -1,3 +1,0 @@
-[submodule "frontend/public/data_viewer"]
-	path = frontend/public/data_viewer
-	url = git@github.com:alexazhou/data_viewer.git

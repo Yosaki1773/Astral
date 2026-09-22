@@ -1,0 +1,275 @@
+/*
+ * dataViewer 主题变量
+ *
+ * 由原独立 data_viewer 子项目的 App.vue 迁移而来，变量名保持 --dv-* 不变，
+ * 以便 LlmChat.vue / MarkdownViewer.vue 的样式无需改动。
+ *
+ * 作用域改为组件根节点 .data-viewer-root，暗色跟随宿主前端的 html.dark，
+ * 不再使用原独立项目的 :root[data-theme='dark']。
+ */
+
+/* 浅色（默认） */
+.data-viewer-root {
+  color-scheme: light;
+  --dv-body-bg: #f6f8fc;
+  --dv-text: #16223b;
+  --dv-text-muted: #667085;
+  --dv-text-subtle: #475569;
+  --dv-text-inverse: #f8fafc;
+  --dv-border: rgba(15, 23, 42, 0.08);
+  --dv-border-soft: rgba(148, 163, 184, 0.2);
+  --dv-shadow-soft: 0 10px 32px rgba(15, 23, 42, 0.06);
+  --dv-shadow-strong: 0 18px 48px rgba(15, 23, 42, 0.08);
+
+  --dv-entry-bg:
+    radial-gradient(circle at top left, rgba(14, 165, 233, 0.16), transparent 28%),
+    radial-gradient(circle at top right, rgba(245, 158, 11, 0.16), transparent 24%),
+    linear-gradient(180deg, #f7fbff 0%, #eef4f7 100%);
+  --dv-entry-panel-bg: rgba(255, 255, 255, 0.88);
+  --dv-entry-panel-border: rgba(148, 163, 184, 0.2);
+  --dv-entry-panel-shadow: 0 24px 80px rgba(15, 23, 42, 0.08);
+  --dv-entry-hero-bg: linear-gradient(145deg, rgba(15, 23, 42, 0.96), rgba(11, 95, 122, 0.9)), #0f172a;
+  --dv-entry-hero-text: #eff6ff;
+  --dv-entry-hero-subtext: rgba(239, 246, 255, 0.82);
+  --dv-entry-hero-badge-bg: rgba(125, 211, 252, 0.14);
+  --dv-entry-hero-badge-text: #bae6fd;
+  --dv-entry-hero-glow: rgba(250, 204, 21, 0.18);
+  --dv-entry-label: #475569;
+  --dv-entry-input-bg: rgba(248, 250, 252, 0.92);
+  --dv-entry-input-border: rgba(148, 163, 184, 0.4);
+  --dv-entry-input-text: #0f172a;
+  --dv-entry-input-focus-border: rgba(2, 132, 199, 0.7);
+  --dv-entry-input-focus-shadow: rgba(14, 165, 233, 0.12);
+  --dv-button-primary-bg: linear-gradient(135deg, #0f766e, #0891b2);
+  --dv-button-primary-text: #f8fafc;
+  --dv-button-primary-shadow: 0 18px 34px rgba(8, 145, 178, 0.22);
+  --dv-button-secondary-bg: #e2e8f0;
+  --dv-button-secondary-text: #0f172a;
+  --dv-button-ghost-text: #0f766e;
+  --dv-button-ghost-border: rgba(15, 118, 110, 0.2);
+  --dv-status-info: #0f766e;
+  --dv-status-error: #b91c1c;
+  --dv-preview-kicker-bg: rgba(14, 165, 233, 0.12);
+  --dv-preview-kicker-text: #0369a1;
+  --dv-preview-meta-bg: #e0f2fe;
+  --dv-preview-meta-text: #075985;
+  --dv-preview-body-bg: #ffffff;
+  --dv-preview-body-border: rgba(226, 232, 240, 0.9);
+  --dv-toggle-bg: #e2e8f0;
+  --dv-toggle-border: rgba(148, 163, 184, 0.4);
+  --dv-toggle-track-bg: rgba(15, 23, 42, 0.12);
+  --dv-toggle-thumb: #ffffff;
+  --dv-toggle-text: #0f172a;
+  --dv-toggle-thumb-shadow: 0 2px 6px rgba(15, 23, 42, 0.2);
+  --dv-toggle-on-bg: #0f766e;
+  --dv-toggle-on-text: #ecfeff;
+
+  --dv-scrollbar-track: rgba(15, 23, 42, 0.03);
+  --dv-scrollbar-thumb: rgba(15, 23, 42, 0.12);
+  --dv-scrollbar-thumb-hover: rgba(15, 23, 42, 0.18);
+
+  --dv-chat-bg: #f8fafc;
+  --dv-chat-bg-image:
+    radial-gradient(circle 600px at top left, rgba(24, 144, 255, 0.16), transparent),
+    radial-gradient(circle 600px at top right, rgba(250, 173, 20, 0.18), transparent),
+    linear-gradient(180deg, #f6f8fc 0, #edf2f9 400px, #f8fafc 1000px);
+  --dv-chat-grid-line: rgba(17, 24, 39, 0.04);
+  --dv-chat-hero-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(255, 255, 255, 0.52));
+  --dv-chat-hero-border: rgba(15, 23, 42, 0.07);
+  --dv-chat-hero-shadow: 0 10px 32px rgba(15, 23, 42, 0.06);
+  --dv-chat-hero-eyebrow: #667085;
+  --dv-chat-hero-title: #16223b;
+  --dv-chat-hero-pill-bg: rgba(255, 255, 255, 0.78);
+  --dv-chat-hero-pill-border: rgba(148, 163, 184, 0.16);
+  --dv-chat-hero-pill-text: #16223b;
+  --dv-chat-hero-pill-label: #667085;
+  --dv-chat-hero-toggle: #2563eb;
+  --dv-chat-hero-divider: rgba(148, 163, 184, 0.16);
+  --dv-chat-hero-panel-bg: linear-gradient(180deg, rgba(241, 245, 249, 0.92), rgba(248, 250, 252, 0.82));
+  --dv-chat-hero-panel-border: rgba(148, 163, 184, 0.18);
+  --dv-chat-hero-panel-title: #667085;
+  --dv-chat-hero-stat-bg: rgba(255, 255, 255, 0.8);
+  --dv-chat-hero-stat-border: rgba(148, 163, 184, 0.14);
+  --dv-chat-hero-stat-label: #667085;
+  --dv-chat-hero-stat-value: #16223b;
+  --dv-chat-hero-tag-bg: rgba(37, 99, 235, 0.12);
+  --dv-chat-hero-tag-text: #1d4ed8;
+  --dv-chat-hero-tag-border: rgba(37, 99, 235, 0.3);
+
+  --dv-message-card-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
+  --dv-message-card-border: rgba(15, 23, 42, 0.08);
+  --dv-message-role: #16223b;
+  --dv-message-subtitle: #667085;
+  --dv-message-user-bg: linear-gradient(180deg, #fff8e8 0%, #fff2cc 100%);
+  --dv-message-assistant-bg: linear-gradient(180deg, #dcecff 0%, #cfe4ff 100%);
+  --dv-message-system-bg: linear-gradient(180deg, #f7f4ff 0%, #f3edff 100%);
+  --dv-message-tool-bg: linear-gradient(180deg, #f4fbf7 0%, #ecf9f0 100%);
+  --dv-message-overlay-start: rgba(255, 255, 255, 0.84);
+  --dv-message-overlay-end: rgba(255, 255, 255, 0.68);
+  --dv-message-overlay-border: rgba(255, 255, 255, 0.44);
+
+  --dv-section-thinking-bg: linear-gradient(180deg, #eef9ff 0%, #e7f7ff 100%);
+  --dv-section-thinking-border: rgba(24, 144, 255, 0.16);
+  --dv-section-tool-bg: linear-gradient(180deg, #eff5ff 0%, #e8f0ff 100%);
+  --dv-section-tool-border: rgba(47, 84, 235, 0.16);
+  --dv-section-tool-result-bg: linear-gradient(180deg, #fcfffd 0%, #f6fcf8 100%);
+  --dv-section-tool-result-border: rgba(82, 196, 26, 0.14);
+  --dv-section-transcript-bg: linear-gradient(180deg, #eef2f7 0%, #e7edf5 100%);
+  --dv-section-transcript-border: rgba(71, 85, 105, 0.14);
+  --dv-section-error-bg: linear-gradient(180deg, #fff2f0 0%, #ffe8e6 100%);
+  --dv-section-error-border: rgba(255, 77, 79, 0.18);
+  --dv-section-meta-bg: rgba(15, 23, 42, 0.06);
+  --dv-section-meta-text: #667085;
+  --dv-section-code-bg: #eef1f5;
+  --dv-section-code-text: #334155;
+  --dv-section-code-border: rgba(148, 163, 184, 0.22);
+  --dv-section-inset-shadow: rgba(255, 255, 255, 0.36);
+
+  --dv-markdown-text: #16223b;
+  --dv-markdown-heading: #16223b;
+  --dv-markdown-code-bg: rgba(15, 23, 42, 0.08);
+  --dv-markdown-pre-bg: #eef1f5;
+  --dv-markdown-pre-text: #334155;
+  --dv-markdown-pre-border: rgba(148, 163, 184, 0.22);
+  --dv-markdown-heading-border: #eaecef;
+  --dv-markdown-blockquote-bg: rgba(24, 144, 255, 0.06);
+  --dv-markdown-blockquote-border: rgba(24, 144, 255, 0.4);
+  --dv-markdown-blockquote-text: #44506a;
+  --dv-markdown-link: #0366d6;
+  --dv-markdown-hr: #e1e4e8;
+  --dv-markdown-table-border: #dfe2e5;
+  --dv-markdown-table-head-bg: #f6f8fa;
+}
+
+/* 深色：跟随宿主前端的 html.dark */
+html.dark .data-viewer-root {
+  color-scheme: dark;
+  --dv-body-bg: #0b1120;
+  --dv-text: #d6dde6;
+  --dv-text-muted: #94a3b8;
+  --dv-text-subtle: #cbd5e1;
+  --dv-text-inverse: #0b1120;
+  --dv-border: rgba(148, 163, 184, 0.22);
+  --dv-border-soft: rgba(148, 163, 184, 0.2);
+  --dv-shadow-soft: 0 10px 32px rgba(0, 0, 0, 0.45);
+  --dv-shadow-strong: 0 18px 48px rgba(0, 0, 0, 0.55);
+
+  --dv-entry-bg:
+    radial-gradient(circle at top left, rgba(56, 189, 248, 0.14), transparent 28%),
+    radial-gradient(circle at top right, rgba(251, 191, 36, 0.12), transparent 24%),
+    linear-gradient(180deg, #0b1120 0%, #0f172a 100%);
+  --dv-entry-panel-bg: rgba(15, 23, 42, 0.86);
+  --dv-entry-panel-border: rgba(148, 163, 184, 0.2);
+  --dv-entry-panel-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  --dv-entry-hero-bg: linear-gradient(145deg, rgba(8, 21, 36, 0.96), rgba(11, 61, 86, 0.95)), #0b1220;
+  --dv-entry-hero-text: #e2e8f0;
+  --dv-entry-hero-subtext: rgba(226, 232, 240, 0.8);
+  --dv-entry-hero-badge-bg: rgba(56, 189, 248, 0.18);
+  --dv-entry-hero-badge-text: #bae6fd;
+  --dv-entry-hero-glow: rgba(250, 204, 21, 0.12);
+  --dv-entry-label: #cbd5e1;
+  --dv-entry-input-bg: rgba(15, 23, 42, 0.9);
+  --dv-entry-input-border: rgba(148, 163, 184, 0.35);
+  --dv-entry-input-text: #e2e8f0;
+  --dv-entry-input-focus-border: rgba(56, 189, 248, 0.7);
+  --dv-entry-input-focus-shadow: rgba(56, 189, 248, 0.2);
+  --dv-button-primary-bg: linear-gradient(135deg, #0f766e, #0284c7);
+  --dv-button-primary-text: #ecfeff;
+  --dv-button-primary-shadow: 0 18px 34px rgba(14, 116, 144, 0.35);
+  --dv-button-secondary-bg: #1e293b;
+  --dv-button-secondary-text: #e2e8f0;
+  --dv-button-ghost-text: #7dd3fc;
+  --dv-button-ghost-border: rgba(125, 211, 252, 0.3);
+  --dv-status-info: #2dd4bf;
+  --dv-status-error: #f87171;
+  --dv-preview-kicker-bg: rgba(56, 189, 248, 0.18);
+  --dv-preview-kicker-text: #7dd3fc;
+  --dv-preview-meta-bg: rgba(14, 116, 144, 0.35);
+  --dv-preview-meta-text: #bae6fd;
+  --dv-preview-body-bg: #0f172a;
+  --dv-preview-body-border: rgba(148, 163, 184, 0.2);
+  --dv-toggle-bg: #1e293b;
+  --dv-toggle-border: rgba(148, 163, 184, 0.3);
+  --dv-toggle-track-bg: rgba(148, 163, 184, 0.2);
+  --dv-toggle-thumb: #e2e8f0;
+  --dv-toggle-text: #e2e8f0;
+  --dv-toggle-thumb-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  --dv-toggle-on-bg: #0f766e;
+  --dv-toggle-on-text: #ecfeff;
+
+  --dv-scrollbar-track: rgba(148, 163, 184, 0.05);
+  --dv-scrollbar-thumb: rgba(148, 163, 184, 0.2);
+  --dv-scrollbar-thumb-hover: rgba(148, 163, 184, 0.3);
+
+  --dv-chat-bg: #0b1120;
+  --dv-chat-bg-image:
+    radial-gradient(circle 600px at top left, rgba(56, 189, 248, 0.12), transparent),
+    radial-gradient(circle 600px at top right, rgba(251, 191, 36, 0.12), transparent),
+    linear-gradient(180deg, #0b1120 0, #0f172a 400px, #0b1120 1000px);
+  --dv-chat-grid-line: rgba(148, 163, 184, 0.08);
+  --dv-chat-hero-bg: linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(15, 23, 42, 0.75));
+  --dv-chat-hero-border: rgba(148, 163, 184, 0.2);
+  --dv-chat-hero-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+  --dv-chat-hero-eyebrow: #94a3b8;
+  --dv-chat-hero-title: #d6dde6;
+  --dv-chat-hero-pill-bg: rgba(15, 23, 42, 0.7);
+  --dv-chat-hero-pill-border: rgba(148, 163, 184, 0.2);
+  --dv-chat-hero-pill-text: #d6dde6;
+  --dv-chat-hero-pill-label: #94a3b8;
+  --dv-chat-hero-toggle: #60a5fa;
+  --dv-chat-hero-divider: rgba(148, 163, 184, 0.2);
+  --dv-chat-hero-panel-bg: linear-gradient(180deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.9));
+  --dv-chat-hero-panel-border: rgba(148, 163, 184, 0.2);
+  --dv-chat-hero-panel-title: #94a3b8;
+  --dv-chat-hero-stat-bg: rgba(15, 23, 42, 0.8);
+  --dv-chat-hero-stat-border: rgba(148, 163, 184, 0.2);
+  --dv-chat-hero-stat-label: #94a3b8;
+  --dv-chat-hero-stat-value: #d6dde6;
+  --dv-chat-hero-tag-bg: rgba(96, 165, 250, 0.2);
+  --dv-chat-hero-tag-text: #93c5fd;
+  --dv-chat-hero-tag-border: rgba(96, 165, 250, 0.45);
+
+  --dv-message-card-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+  --dv-message-card-border: rgba(148, 163, 184, 0.2);
+  --dv-message-role: #d6dde6;
+  --dv-message-subtitle: #94a3b8;
+  --dv-message-user-bg: linear-gradient(180deg, #3b2f1a 0%, #2a2214 100%);
+  --dv-message-assistant-bg: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  --dv-message-system-bg: linear-gradient(180deg, #2b1f3f 0%, #1c152c 100%);
+  --dv-message-tool-bg: linear-gradient(180deg, #0f2f2b 0%, #0b1f1d 100%);
+  --dv-message-overlay-start: rgba(0, 0, 0, 0.45);
+  --dv-message-overlay-end: rgba(0, 0, 0, 0.28);
+  --dv-message-overlay-border: rgba(148, 163, 184, 0.28);
+
+  --dv-section-thinking-bg: linear-gradient(180deg, #0f2438 0%, #0d1f30 100%);
+  --dv-section-thinking-border: rgba(56, 189, 248, 0.25);
+  --dv-section-tool-bg: linear-gradient(180deg, #0f1f3d 0%, #0e1a2f 100%);
+  --dv-section-tool-border: rgba(96, 165, 250, 0.22);
+  --dv-section-tool-result-bg: linear-gradient(180deg, #0f2a22 0%, #0b1f1a 100%);
+  --dv-section-tool-result-border: rgba(52, 211, 153, 0.2);
+  --dv-section-transcript-bg: linear-gradient(180deg, #121b2a 0%, #0f172a 100%);
+  --dv-section-transcript-border: rgba(148, 163, 184, 0.2);
+  --dv-section-error-bg: linear-gradient(180deg, #3b1010 0%, #2a0c0c 100%);
+  --dv-section-error-border: rgba(248, 113, 113, 0.35);
+  --dv-section-meta-bg: rgba(148, 163, 184, 0.18);
+  --dv-section-meta-text: #cbd5e1;
+  --dv-section-code-bg: #1f252b;
+  --dv-section-code-text: #d6dde6;
+  --dv-section-code-border: rgba(148, 163, 184, 0.2);
+  --dv-section-inset-shadow: rgba(255, 255, 255, 0.08);
+
+  --dv-markdown-text: #d6dde6;
+  --dv-markdown-heading: #d6dde6;
+  --dv-markdown-code-bg: rgba(148, 163, 184, 0.18);
+  --dv-markdown-pre-bg: #1f252b;
+  --dv-markdown-pre-text: #d6dde6;
+  --dv-markdown-pre-border: rgba(148, 163, 184, 0.2);
+  --dv-markdown-heading-border: rgba(148, 163, 184, 0.3);
+  --dv-markdown-blockquote-bg: rgba(56, 189, 248, 0.12);
+  --dv-markdown-blockquote-border: rgba(56, 189, 248, 0.5);
+  --dv-markdown-blockquote-text: #cbd5e1;
+  --dv-markdown-link: #7dd3fc;
+  --dv-markdown-hr: rgba(148, 163, 184, 0.3);
+  --dv-markdown-table-border: rgba(148, 163, 184, 0.3);
+  --dv-markdown-table-head-bg: rgba(15, 23, 42, 0.7);
+}

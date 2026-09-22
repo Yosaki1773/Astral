@@ -128,7 +128,7 @@ async function startServer() {
             const pathname = url.pathname;
 
             // Let asset files pass through to serveStatic middleware
-            if (pathname.startsWith("/assets/") || pathname.startsWith("/data_viewer/")) {
+            if (pathname.startsWith("/assets/")) {
                 return next();
             }
 
@@ -155,7 +155,6 @@ async function startServer() {
 
         // Static file serving for built frontend assets
         app.use("/assets/*", serveStatic({ root: distPath }));
-        app.use("/data_viewer/*", serveStatic({ root: distPath }));
     }
 
     const hostname = hostService.getLocalHost();

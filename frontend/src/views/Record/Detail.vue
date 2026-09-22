@@ -319,7 +319,7 @@
                 </div>
               </div>
 
-              <!-- 2. Data Viewer 官方对话可视化 Iframe 容器 -->
+              <!-- 2. 对话可视化组件（原独立 data_viewer 已内联为前端组件） -->
               <div class="viewer-iframe-wrapper">
                 <div v-if="messageCount === 0" class="no-payload-hint">
                   <div
@@ -335,14 +335,13 @@
                     如需记录请到设置中打开开关，或在右侧查看原始 JSON
                   </div>
                 </div>
-                <iframe
+                <DataViewer
                   v-else
-                  ref="viewerIframe"
-                  src="/data_viewer/dist/index.html"
-                  class="visualization-iframe"
-                  frameborder="0"
-                  @load="onIframeLoad"
-                ></iframe>
+                  :data="conversationData"
+                  data-type="llm"
+                  embedded
+                  class="visualization-viewer"
+                />
               </div>
             </section>
           </div>
@@ -795,6 +794,7 @@ import {
 import JsonDownload from "@/utils/jsonDownload";
 import { isTauri } from "@/utils/platform";
 import JsonViewer from "@/components/common/JsonViewer.vue";
+import DataViewer from "@/components/dataViewer/DataViewer.vue";
 import ActivityTimeline from "@/components/common/ActivityTimeline.vue";
 import { FAILED_CODE_LABELS } from "@/constants/record";
 import { message } from "ant-design-vue/es";
@@ -810,7 +810,6 @@ const router = useRouter();
 const route = useRoute();
 const recordStore = useRecordStore();
 
-const viewerIframe = ref<HTMLIFrameElement | null>(null);
 const activeRightTab = ref<
   | "preview"
   | "response_json"
@@ -907,34 +906,6 @@ function getMessageCount(data: any): number {
 
 const messageCount = computed(() => getMessageCount(conversationData.value));
 
-function onIframeLoad() {
-  if (viewerIframe.value && viewerIframe.value.contentWindow) {
-    setTimeout(() => {
-      const bridge = (viewerIframe.value!.contentWindow as any).gt_bridge;
-      if (bridge && typeof bridge.setLlmData === "function") {
-        bridge.setLlmData(JSON.parse(JSON.stringify(conversationData.value)));
-      }
-    }, 300);
-  }
-}
-
-watch(
-  conversationData,
-  newVal => {
-    if (
-      getMessageCount(newVal) > 0 &&
-      viewerIframe.value &&
-      viewerIframe.value.contentWindow
-    ) {
-      const bridge = (viewerIframe.value.contentWindow as any).gt_bridge;
-      if (bridge && typeof bridge.setLlmData === "function") {
-        bridge.setLlmData(JSON.parse(JSON.stringify(newVal)));
-      }
-    }
-  },
-  { deep: true, immediate: true },
-);
-
 function openVisualInNewTab() {
   if (messageCount.value <= 0) {
     message.warning("当前没有可展示的对话数据");
@@ -957,7 +928,7 @@ function openVisualInNewTab() {
   }
 
   window.open(
-    `/data_viewer/dist/index.html?session_key=${encodeURIComponent(sessionKey)}`,
+    `/#/viewer?session_key=${encodeURIComponent(sessionKey)}`,
     "_blank",
     "noopener,noreferrer",
   );
@@ -1166,15 +1137,6 @@ function renderMarkdown(content: string): string {
     return marked.parse(content) as string;
   } catch {
     return `<p>${content}</p>`;
-  }
-}
-
-function formatRawJson(jsonStr: string | null): string {
-  if (!jsonStr) return "{}";
-  try {
-    return JSON.stringify(JSON.parse(jsonStr), null, 2);
-  } catch {
-    return jsonStr;
   }
 }
 
@@ -1972,10 +1934,11 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   min-height: 0;
 }
 
-.visualization-iframe {
+.visualization-viewer {
   width: 100%;
   height: 100%;
   flex: 1;
+  min-height: 0;
   border: none;
 }
 
