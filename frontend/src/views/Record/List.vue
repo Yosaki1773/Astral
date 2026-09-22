@@ -100,9 +100,9 @@ import { onMounted, onUnmounted, ref } from 'vue';
 import { useAutoRefresh } from '@/composables/useAutoRefresh';
 import { useRecordTable } from '@/composables/useRecordTable';
 import RecordTable from '@/components/common/RecordTable.vue';
-import { listUsers } from '@/api/user';
-import { listModels } from '@/api/model';
-import { normalizeListResponse } from '@/utils/listResponse';
+import { useDirectoryStore } from '@/stores/directory';
+
+const directoryStore = useDirectoryStore();
 
 const userOptions = ref<{ value: number; label: string }[]>([]);
 const modelOptions = ref<{ value: number; label: string }[]>([]);
@@ -112,15 +112,15 @@ function filterOption(input: string, option: { label: string }) {
 }
 
 async function loadSelectOptions() {
-    const [usersRes, modelsRes] = await Promise.all([
-        listUsers({ pageSize: 1000 }),
-        listModels({ pageSize: 1000 }),
+    const [users, models] = await Promise.all([
+        directoryStore.loadUsers(),
+        directoryStore.loadModels(),
     ]);
     userOptions.value = [
         { value: -1, label: 'root' },
-        ...normalizeListResponse(usersRes).list.map(u => ({ value: Number(u.id), label: u.name })),
+        ...users.map(u => ({ value: Number(u.id), label: u.name })),
     ];
-    modelOptions.value = normalizeListResponse(modelsRes).list.map(m => ({ value: Number(m.id), label: m.name }));
+    modelOptions.value = models.map(m => ({ value: Number(m.id), label: m.name }));
 }
 
 const {
@@ -141,16 +141,13 @@ const {
     stop: stopAutoRefresh,
     remainingSeconds,
 } = useAutoRefresh({
-    callback: () => {
-        loadData();
-    },
-    defaultInterval: 30000,
-    immediate: false,
+    callback: () => loadData(),
+    defaultInterval: 5000,
+    immediate: true,
 });
 
 onMounted(() => {
     void loadSelectOptions();
-    loadData();
 });
 
 onUnmounted(() => {

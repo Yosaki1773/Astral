@@ -159,6 +159,7 @@ import { computed, ref, reactive } from 'vue';
 import type { FormInstance } from 'ant-design-vue/es';
 import { InfoCircleOutlined } from '@ant-design/icons-vue';
 import { createModel, updateModel } from '@/api/model';
+import { useDirectoryStore } from '@/stores/directory';
 import { getConfig } from '@/api/config';
 import { useTenantStore } from '@/stores/tenant';
 import type {
@@ -330,10 +331,12 @@ async function handleOk() {
 
         if (isEdit.value) {
             const model = await updateModel(currentId.value, requestData);
+            useDirectoryStore().invalidateModels();
             notifySuccess('更新成功');
             emit('success', model);
         } else {
             const model = await createModel(requestData);
+            useDirectoryStore().invalidateModels();
             notifySuccess('创建成功');
             emit('success', model);
         }

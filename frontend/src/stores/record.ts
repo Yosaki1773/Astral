@@ -1,9 +1,10 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { listRecords, latestRecords, getRecord, getRecordActivity } from '@/api/record';
-import { getUser, fetchUsersByIds } from '@/api/user';
-import { getModel, fetchModelsByIds } from '@/api/model';
-import { getVendor, fetchVendorsByIds } from '@/api/vendor';
+import { getUser } from '@/api/user';
+import { getModel } from '@/api/model';
+import { getVendor } from '@/api/vendor';
+import { useDirectoryStore } from '@/stores/directory';
 import type { Record, RecordQuery, RecordDetail, RecordActivityEntry } from '@/types/record';
 
 
@@ -26,12 +27,12 @@ export const useRecordStore = defineStore('record', () => {
             const fetchedRecords = response.list || [];
             total.value = response.total || 0;
 
-            if (fetchedRecords.length > 0) {
-                // 批量获取关联信息
-                await enrichRecords(fetchedRecords);
-            }
-            
+            // 先渲染列表再异步补全名称：避免表格等名称请求全部完成才显示数据
             records.value = fetchedRecords;
+            if (fetchedRecords.length > 0) {
+                void enrichRecords(fetchedRecords);
+            }
+
             return { total: total.value };
         } catch (error) {
             console.error('获取记录列表失败:', error);
@@ -48,12 +49,11 @@ export const useRecordStore = defineStore('record', () => {
         try {
             const response = await latestRecords(limit);
             const fetchedRecords = response || [];
-            
-            if (fetchedRecords.length > 0) {
-                await enrichRecords(fetchedRecords);
-            }
-            
+
             records.value = fetchedRecords;
+            if (fetchedRecords.length > 0) {
+                void enrichRecords(fetchedRecords);
+            }
         } catch (error) {
             console.error('获取最新记录失败:', error);
             records.value = [];
@@ -63,24 +63,21 @@ export const useRecordStore = defineStore('record', () => {
     }
 
     /**
-     * 为记录列表填充关联名称（用户、模型、供应商）
+     * 为记录列表填充关联名称（用户、模型、供应商）。
+     * 名称数据优先取全局 directory 缓存（TTL 内零请求），仅对缓存中缺失的
+     * id 才退回 batch 接口逐批补全；补全结果直接写到传入的记录对象上，
+     * 响应式更新表格，不阻塞列表渲染。
      */
     async function enrichRecords(recordList: Record[]) {
-        const userIds = [...new Set(recordList.map(r => r.user_id).filter(id => id !== null && Number(id) !== -1))] as number[];
-        const modelIds = [...new Set(recordList.map(r => r.model_id).filter(id => id !== null))] as number[];
+        const directory = useDirectoryStore();
 
         const [users, models] = await Promise.all([
-            userIds.length > 0 ? fetchUsersByIds(userIds) : Promise.resolve([]),
-            modelIds.length > 0 ? fetchModelsByIds(modelIds) : Promise.resolve([]),
+            directory.loadUsers(),
+            directory.loadModels(),
         ]);
 
         const userMap = new Map(users.map(u => [Number(u.id), u.name]));
         const modelMap = new Map(models.map(m => [Number(m.id), m]));
-
-        // 获取供应商信息 (基于记录自身的 vendor_id)
-        const vendorIds = [...new Set(recordList.map(r => r.vendor_id).filter(id => id !== null && id !== undefined))] as number[];
-        const vendors = vendorIds.length > 0 ? await fetchVendorsByIds(vendorIds) : [];
-        const vendorMap = new Map(vendors.map(v => [Number(v.id), v.name]));
 
         recordList.forEach(record => {
             const uid = record.user_id !== null ? Number(record.user_id) : null;
@@ -102,14 +99,22 @@ export const useRecordStore = defineStore('record', () => {
             }
 
             if (record.vendor_id) {
-                const vid = Number(record.vendor_id);
-                record.vendor_name = vendorMap.get(vid) || `供应商${vid}`;
+                // vendor_id 为空时大多数记录不涉及上游，按需加载避免每次进页面都拉供应商列表
+                void loadVendorName(record);
             } else {
                 record.vendor_name = null;
             }
-            
+
             // vendor_model_name 已经由后端直接返回，不需要单独再映射
         });
+    }
+
+    /** 单条记录的供应商名称补全：directory 缓存优先，缓存命中则零请求 */
+    async function loadVendorName(record: Record) {
+        const directory = useDirectoryStore();
+        const vendors = await directory.loadVendors();
+        const vendor = vendors.find(v => Number(v.id) === Number(record.vendor_id));
+        record.vendor_name = vendor ? vendor.name : `供应商${record.vendor_id}`;
     }
 
     async function fetchRecordDetail(id: number): Promise<void> {

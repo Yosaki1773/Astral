@@ -137,6 +137,7 @@ import {
 import { useRouter } from 'vue-router';
 import { Modal } from 'ant-design-vue/es';
 import { listVendors, deleteVendor } from '@/api/vendor';
+import { useDirectoryStore } from '@/stores/directory';
 import { useResourceTable } from '@/composables/useResourceTable';
 import { formatDate } from '@/utils/format';
 import DialogCreate from './DialogCreate.vue';
@@ -210,6 +211,7 @@ function handleDelete(record: Vendor) {
         onOk: async () => {
             try {
                 await deleteVendor(record.id);
+                useDirectoryStore().invalidateVendors();
                 notifySuccess('删除成功');
                 void loadData();
             } catch (error) {

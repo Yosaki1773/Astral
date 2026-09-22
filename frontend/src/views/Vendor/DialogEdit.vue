@@ -123,6 +123,7 @@ import { ref, reactive, computed, watch } from 'vue';
 import type { FormInstance } from 'ant-design-vue/es';
 import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons-vue';
 import { updateVendor } from '@/api/vendor';
+import { useDirectoryStore } from '@/stores/directory';
 import type { UpdateVendorRequest, Vendor, VendorType, VendorUrls, VendorAuthMode, VendorProxyType } from '@/types/vendor';
 import { notifyRequestError, notifySuccess } from '@/utils/requestFeedback';
 import { useVendorPresets } from '@/composables/useVendorPresets';
@@ -251,6 +252,7 @@ async function handleOk() {
 
         loading.value = true;
         const vendor = await updateVendor(currentId.value, updateData);
+        useDirectoryStore().invalidateVendors();
         notifySuccess('更新成功');
         emit('success', vendor);
         handleCancel();

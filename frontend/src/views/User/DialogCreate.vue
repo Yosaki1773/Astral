@@ -39,6 +39,7 @@
 import { ref, reactive } from 'vue';
 import type { FormInstance } from 'ant-design-vue/es';
 import { createUser } from '@/api/user';
+import { useDirectoryStore } from '@/stores/directory';
 import type { User } from '@/types/user';
 import { notifyRequestError, notifySuccess } from '@/utils/requestFeedback';
 
@@ -74,6 +75,7 @@ async function handleOk() {
         await formRef.value?.validate();
         loading.value = true;
         const user = await createUser(formState);
+        useDirectoryStore().invalidateUsers();
         notifySuccess('创建成功');
         emit('success', user);
         handleCancel();

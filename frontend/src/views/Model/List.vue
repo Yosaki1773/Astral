@@ -165,6 +165,7 @@ import {
     InfoCircleOutlined,
 } from '@ant-design/icons-vue';
 import { deleteModel, listModels } from '@/api/model';
+import { useDirectoryStore } from '@/stores/directory';
 import { listVendors, fetchVendorModelsByIds } from '@/api/vendor';
 import { getConfig } from '@/api/config';
 import { useResourceTable } from '@/composables/useResourceTable';
@@ -278,6 +279,7 @@ function handleDelete(record: Model) {
         onOk: async () => {
             try {
                 await deleteModel(record.id);
+                useDirectoryStore().invalidateModels();
                 notifySuccess('删除成功');
                 void loadData();
             } catch (error) {
