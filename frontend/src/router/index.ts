@@ -27,8 +27,15 @@ import IntegrationIndex from '@/views/Integration/Index.vue';
 import ClientManager from '@/views/ClientManager.vue';
 import AdvancedSettings from '@/views/AdvancedSettings.vue';
 import Developer from '@/views/Developer.vue';
+import DataViewer from '@/views/DataViewer.vue';
 
 const routes: RouteRecordRaw[] = [
+    {
+        path: '/viewer',
+        name: 'DataViewer',
+        component: DataViewer,
+        meta: { requiresAuth: false },
+    },
     {
         path: '/login',
         name: 'Login',
