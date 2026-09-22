@@ -43,6 +43,7 @@ import { ref, reactive } from 'vue';
 import { Modal } from 'ant-design-vue/es';
 import type { FormInstance } from 'ant-design-vue/es';
 import { updateUser } from '@/api/user';
+import { useDirectoryStore } from '@/stores/directory';
 import type { User } from '@/types/user';
 import { notifyError, notifyRequestError, notifySuccess } from '@/utils/requestFeedback';
 
@@ -100,6 +101,7 @@ async function handleOk() {
             token: formState.token,
             status: formState.status,
         });
+        useDirectoryStore().invalidateUsers();
         notifySuccess('更新成功');
         emit('success', user);
         handleCancel();
