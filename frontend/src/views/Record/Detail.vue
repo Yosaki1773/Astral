@@ -34,8 +34,17 @@
         </a-page-header>
 
         <a-spin :spinning="recordStore.loading">
-            <div v-if="recordStore.currentRecord" class="detail-content">
-                <!-- 基本信息 -->
+            <!-- 请求在途：骨架屏占位，避免空白/闪烁 -->
+            <div v-if="isDetailLoading" class="detail-content">
+                <a-card title="基本信息" class="detail-card">
+                    <a-skeleton active :paragraph="{ rows: 4 }" />
+                </a-card>
+                <a-card class="detail-card">
+                    <a-skeleton active :title="false" :paragraph="{ rows: 6 }" />
+                </a-card>
+            </div>
+
+            <div v-else-if="recordStore.currentRecord" class="detail-content">                <!-- 基本信息 -->
                 <a-card title="基本信息" class="detail-card">
                     <a-descriptions :column="2" bordered>
                         <a-descriptions-item label="请求 ID">
@@ -191,7 +200,8 @@
                 </a-card>
             </div>
 
-            <a-empty v-else description="请求未找到" />
+            <a-empty v-else-if="recordStore.recordNotFound" description="请求未找到" />
+            <a-empty v-else-if="recordStore.recordLoadFailed" description="请求详情加载失败，请稍后重试" />
         </a-spin>
     </div>
 </template>
@@ -214,6 +224,16 @@ import { message } from 'ant-design-vue/es';
 const router = useRouter();
 const route = useRoute();
 const recordStore = useRecordStore();
+
+/**
+ * 详情是否在途：骨架屏的显示条件。不依赖 recordStore.loading（那个延迟
+ * 3 秒才置位，是给表格 spinner 防闪烁用的），这里要求请求一发出就显示骨架。
+ */
+const isDetailLoading = computed(() =>
+    !recordStore.currentRecord
+    && !recordStore.recordNotFound
+    && !recordStore.recordLoadFailed
+);
 
 const viewerIframe = ref<HTMLIFrameElement | null>(null);
 const activeRequestTab = ref<string>('request_json');
