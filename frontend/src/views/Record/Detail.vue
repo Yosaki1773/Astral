@@ -40,22 +40,8 @@
 
         <div class="v-divider"></div>
 
-        <!-- 中间段 1：核心标识（用户、接入模型、供应商/实际模型、协议） -->
+        <!-- 中间段 1：核心标识（接入模型、供应商/实际模型、协议） -->
         <div v-if="recordStore.currentRecord" class="status-bar-meta">
-          <!-- 用户 -->
-          <div class="meta-col">
-            <span class="micro-label">用户</span>
-            <div class="meta-user">
-              <span class="user-avatar-mini">{{
-                (recordStore.currentRecord.user_name || "U")
-                  .charAt(0)
-                  .toLowerCase()
-              }}</span>
-              <span class="meta-value">{{
-                recordStore.currentRecord.user_name || "-"
-              }}</span>
-            </div>
-          </div>
           <!-- 接入模型 -->
           <div class="meta-col">
             <span class="micro-label">接入模型</span>
@@ -78,7 +64,7 @@
               </span>
             </div>
             <span
-              class="meta-value font-mono font-secondary truncate"
+              class="meta-value font-mono font-secondary"
               :title="recordStore.currentRecord.vendor_model_name || '-'"
             >
               {{ recordStore.currentRecord.vendor_model_name || "-" }}
@@ -1245,12 +1231,12 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 
 <style scoped>
 .record-detail-page {
-  background-color: #f8fafc;
+  background-color: var(--bg-layout);
   height: calc(100vh - 64px);
   max-height: calc(100vh - 64px);
   display: flex;
   flex-direction: column;
-  color: #1e293b;
+  color: var(--text-primary);
   font-family:
     Inter,
     -apple-system,
@@ -1268,8 +1254,8 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 .status-bar-header {
   width: 100%;
   flex-shrink: 0;
-  background-color: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
+  background-color: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
   box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
 }
 
@@ -1301,16 +1287,16 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #64748b;
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .btn-icon:hover {
-  color: #0f172a;
-  background: #f1f5f9;
+  color: var(--text-primary);
+  background: var(--bg-info-item);
 }
 
 .identity-block {
@@ -1327,7 +1313,7 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 
 .page-title {
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-primary);
   font-size: 14px;
   letter-spacing: -0.01em;
   white-space: nowrap;
@@ -1344,27 +1330,27 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 }
 
 .status-badge.status-success {
-  background-color: #ecfdf5;
-  color: #047857;
-  border: 1px solid #a7f3d0;
+  background-color: var(--accent-primary-soft);
+  color: var(--accent-primary);
+  border: 1px solid var(--accent-primary-border);
 }
 
 .status-badge.status-failed {
-  background-color: #fff1f2;
-  color: #be123c;
-  border: 1px solid #fecdd3;
+  background-color: var(--accent-danger-soft);
+  color: var(--accent-danger);
+  border: 1px solid var(--accent-danger-border);
 }
 
 .status-badge.status-processing {
-  background-color: #eff6ff;
-  color: #1d4ed8;
-  border: 1px solid #bfdbfe;
+  background-color: var(--accent-primary-soft);
+  color: var(--accent-primary);
+  border: 1px solid var(--accent-primary-border);
 }
 
 .status-badge.status-default {
-  background-color: #f1f5f9;
-  color: #475569;
-  border: 1px solid #cbd5e1;
+  background-color: var(--bg-info-item);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
 }
 
 .status-dot {
@@ -1379,31 +1365,31 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: #94a3b8;
-  font-family: monospace;
+  color: var(--text-secondary);
+  font-family: "JetBrains Mono", "Fira Code", monospace;
   margin-top: 2px;
 }
 
 .record-id-tag {
-  color: #475569;
+  color: var(--text-secondary);
   font-weight: 600;
-  background-color: #f1f5f9;
+  background-color: var(--bg-info-item);
   padding: 0 4px;
   border-radius: 3px;
 }
 
 .bullet {
-  color: #cbd5e1;
+  color: var(--border-color);
 }
 
 .created-time {
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .v-divider {
   height: 28px;
   width: 1px;
-  background-color: #e2e8f0;
+  background-color: var(--border-color);
   flex-shrink: 0;
 }
 
@@ -1411,42 +1397,46 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 .status-bar-meta {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 20px;
   flex-shrink: 0;
 }
 
 .meta-col {
   display: flex;
   flex-direction: column;
-  min-width: 50px;
-  gap: 5px;
-  align-items: center;
+  min-width: 60px;
+  gap: 4px;
+  align-items: flex-start;
 }
 
 .micro-label {
   font-size: 11px;
   line-height: 14px;
-  color: #94a3b8;
+  height: 14px;
+  color: var(--text-secondary);
   text-transform: uppercase;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .micro-sub {
   font-size: 10px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-weight: normal;
   text-transform: none;
 }
 
 .meta-value {
   font-size: 13px;
-  line-height: 18px;
+  line-height: 16px;
+  height: 16px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--text-primary);
+  white-space: nowrap;
 }
 
 .font-secondary {
-  color: #475569;
+  color: var(--text-secondary);
   font-size: 12px;
 }
 
@@ -1461,40 +1451,22 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   max-width: 160px;
 }
 
-.meta-user {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.user-avatar-mini {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background-color: #e0e7ff;
-  color: #4f46e5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  font-weight: bold;
-  border: 1px solid #c7d2fe;
-}
-
 .meta-label-flex {
   display: flex;
   align-items: center;
   gap: 6px;
+  height: 14px;
+  line-height: 14px;
 }
 
 .vendor-tag {
   font-size: 10px;
-  font-family: monospace;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
   padding: 0 4px;
   border-radius: 3px;
-  background-color: #f1f5f9;
-  color: #475569;
-  border: 1px solid #e2e8f0;
+  background-color: var(--bg-info-item);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
   font-weight: 500;
 }
 
@@ -1508,22 +1480,22 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 .protocol-badge {
   padding: 1px 6px;
   font-size: 10px;
-  font-family: monospace;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
   font-weight: 600;
-  background-color: #eff6ff;
-  color: #1d4ed8;
-  border: 1px solid #bfdbfe;
+  background-color: var(--accent-primary-soft);
+  color: var(--accent-primary);
+  border: 1px solid var(--accent-primary-border);
   border-radius: 4px;
 }
 
 .protocol-upstream {
-  background-color: #fff7ed;
-  color: #c2410c;
-  border-color: #fed7aa;
+  background-color: var(--accent-warning-soft);
+  color: var(--accent-warning);
+  border-color: var(--accent-warning-border);
 }
 
 .protocol-arrow {
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-size: 10px;
 }
 
@@ -1531,34 +1503,37 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 .status-bar-metrics {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 20px;
   flex-shrink: 0;
 }
 
 .metric-col {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  align-items: center;
+  gap: 4px;
+  align-items: flex-start;
+  min-width: 70px;
 }
 
 .metric-value-row {
   font-size: 13px;
-  line-height: 18px;
+  line-height: 16px;
+  height: 16px;
   display: flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
 }
 
 .token-up {
-  color: #0284c7;
+  color: #38bdf8;
   font-weight: 600;
   display: inline-flex;
   align-items: center;
 }
 
 .token-down {
-  color: #059669;
+  color: #34d399;
   font-weight: 600;
   display: inline-flex;
   align-items: center;
@@ -1571,12 +1546,12 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 
 .token-cached {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-weight: normal;
 }
 
 .slash {
-  color: #cbd5e1;
+  color: var(--border-color);
   margin: 0 1px;
 }
 
@@ -1584,32 +1559,37 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   display: flex;
   align-items: center;
   gap: 6px;
+  height: 16px;
+  line-height: 16px;
 }
 
 .cache-hit-num {
-  font-family: monospace;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
   font-size: 13px;
   font-weight: 700;
-  color: #059669;
+  color: #34d399;
 }
 
 .cache-hit-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background-color: #10b981;
-  box-shadow: 0 0 0 2px #d1fae5;
+  background-color: #34d399;
+  box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.2);
 }
 
 .ttft-pill {
   display: inline-block;
   padding: 1px 5px;
   font-size: 12px;
+  line-height: 14px;
+  height: 16px;
   font-weight: 600;
-  color: #b45309;
-  background-color: #fffbeb;
-  border: 1px solid #fde68a;
+  color: var(--accent-warning);
+  background-color: var(--accent-warning-soft);
+  border: 1px solid var(--accent-warning-border);
   border-radius: 4px;
+  box-sizing: border-box;
 }
 
 /* 右侧操作段 */
@@ -1622,10 +1602,10 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 
 .btn-group-nav {
   display: inline-flex;
-  background-color: #f1f5f9;
+  background-color: var(--bg-info-item);
   padding: 2px;
   border-radius: 8px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-color);
 }
 
 .btn-nav {
@@ -1635,17 +1615,17 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   padding: 4px 10px;
   font-size: 12px;
   font-weight: 500;
-  color: #334155;
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .btn-nav:hover:not(:disabled) {
-  background: #f8fafc;
-  color: #0f172a;
+  background: var(--bg-info-item);
+  color: var(--text-primary);
 }
 
 .btn-nav:disabled {
@@ -1655,7 +1635,7 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 
 .icon-nav {
   font-size: 11px;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .btn-delete {
@@ -1665,17 +1645,17 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   padding: 5px 12px;
   font-size: 12px;
   font-weight: 500;
-  color: #e11d48;
-  background: #fff;
-  border: 1px solid #fecdd3;
+  color: var(--accent-danger);
+  background: var(--bg-card);
+  border: 1px solid var(--accent-danger-border);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .btn-delete:hover {
-  background-color: #fff1f2;
-  color: #be123c;
+  background-color: var(--accent-danger-soft);
+  color: var(--accent-danger);
 }
 
 /* 主体工作台双栏布局 */
@@ -1721,9 +1701,9 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 }
 
 .panel-card {
-  background: #ffffff;
+  background: var(--bg-card);
   border-radius: 12px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-color);
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
   overflow: hidden;
   display: flex;
@@ -1748,8 +1728,8 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 /* 面板头部 */
 .panel-header {
   padding: 12px 16px;
-  background-color: rgba(248, 250, 252, 0.7);
-  border-bottom: 1px solid #e2e8f0;
+  background-color: var(--bg-header);
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1770,11 +1750,11 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 }
 
 .dot-indigo {
-  background-color: #4f46e5;
+  background-color: var(--accent-primary);
 }
 
 .dot-emerald {
-  background-color: #10b981;
+  background-color: #34d399;
 }
 
 .panel-title {
@@ -1782,16 +1762,16 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #1e293b;
+  color: var(--text-primary);
   margin: 0;
 }
 
 .badge-count {
   font-size: 11px;
   font-family: monospace;
-  color: #64748b;
-  background-color: #ffffff;
-  border: 1px solid #e2e8f0;
+  color: var(--text-secondary);
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
   padding: 1px 6px;
   border-radius: 4px;
 }
@@ -1809,23 +1789,23 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   padding: 4px 8px;
   font-size: 11px;
   font-family: monospace;
-  color: #475569;
-  background: #fff;
-  border: 1px solid #cbd5e1;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .btn-pill-action:hover {
-  background: #f1f5f9;
-  color: #0f172a;
+  background: var(--bg-info-item);
+  color: var(--text-primary);
 }
 
 /* Tab 切换器 */
 .tab-switcher {
   display: inline-flex;
-  background-color: #e2e8f0;
+  background-color: var(--border-color);
   padding: 2px;
   border-radius: 8px;
   flex-wrap: wrap;
@@ -1835,7 +1815,7 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   padding: 4px 10px;
   font-size: 11px;
   font-weight: 500;
-  color: #64748b;
+  color: var(--text-secondary);
   background: transparent;
   border: none;
   border-radius: 6px;
@@ -1844,29 +1824,29 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 }
 
 .tab-btn:hover {
-  color: #0f172a;
+  color: var(--text-primary);
 }
 
 .tab-btn.active {
-  background-color: #ffffff;
-  color: #0f172a;
+  background-color: var(--bg-card);
+  color: var(--text-primary);
   font-weight: 600;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .tab-btn-error {
-  color: #e11d48;
+  color: var(--accent-danger);
 }
 
 .tab-btn-error.active {
-  color: #be123c;
+  color: var(--accent-danger);
 }
 
 /* 调用参数条 */
 .params-strip {
   padding: 14px 16px;
-  border-bottom: 1px solid #f1f5f9;
-  background-color: rgba(248, 250, 252, 0.4);
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-info-item);
 }
 
 .params-header {
@@ -1875,14 +1855,14 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   justify-content: space-between;
   margin-bottom: 10px;
   font-size: 11px;
-  color: #64748b;
+  color: var(--text-secondary);
   font-weight: 600;
   text-transform: uppercase;
 }
 
 .params-route {
   font-size: 10px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .params-grid {
@@ -1898,17 +1878,17 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 }
 
 .param-box {
-  background: #ffffff;
+  background: var(--bg-card);
   padding: 8px 10px;
   border-radius: 8px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
 }
 
 .param-label {
   font-size: 10px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   text-transform: uppercase;
   font-family: sans-serif;
 }
@@ -1916,13 +1896,13 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 .param-val {
   font-size: 12px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--text-primary);
   font-family: monospace;
   margin-top: 2px;
 }
 
 .text-purple {
-  color: #9333ea;
+  color: #c084fc;
 }
 
 /* Data Viewer Iframe 对话可视化容器 */
@@ -1930,7 +1910,7 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background-color: #ffffff;
+  background-color: var(--bg-card);
   min-height: 0;
 }
 
@@ -1944,16 +1924,16 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 
 /* 原始 JSON 折叠面板 */
 .raw-json-collapsible {
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--border-color);
   font-size: 12px;
 }
 
 .raw-summary {
   cursor: pointer;
-  background-color: #f8fafc;
+  background-color: var(--bg-layout);
   padding: 8px 14px;
   font-family: monospace;
-  color: #475569;
+  color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1961,8 +1941,8 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 }
 
 .raw-summary:hover {
-  color: #0f172a;
-  background-color: #f1f5f9;
+  color: var(--text-primary);
+  background-color: var(--bg-info-item);
 }
 
 .raw-summary-title {
@@ -1974,7 +1954,7 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 
 .summary-caret {
   font-size: 10px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   transition: transform 0.2s ease;
 }
 
@@ -1984,12 +1964,12 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 
 .raw-summary-hint {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .raw-json-body {
-  background-color: #0f172a;
-  border-top: 1px solid #e2e8f0;
+  background-color: var(--bg-code-header);
+  border-top: 1px solid var(--border-color);
 }
 
 .raw-json-bar {
@@ -1997,10 +1977,10 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
-  background-color: #1e293b;
-  border-bottom: 1px solid #334155;
+  background-color: var(--bg-code-header);
+  border-bottom: 1px solid var(--border-color);
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .btn-copy-raw {
@@ -2024,7 +2004,7 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   line-height: 1.5;
-  color: #cbd5e1;
+  color: var(--border-color);
   overflow-x: auto;
   max-height: 350px;
 }
@@ -2032,8 +2012,8 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 /* 右侧响应面板 */
 .response-status-strip {
   padding: 10px 16px;
-  background-color: rgba(248, 250, 252, 0.4);
-  border-bottom: 1px solid #f1f5f9;
+  background-color: var(--bg-info-item);
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2057,21 +2037,21 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 }
 
 .tag-success {
-  background-color: #ecfdf5;
-  color: #047857;
-  border: 1px solid #a7f3d0;
+  background-color: var(--accent-primary-soft);
+  color: var(--accent-primary);
+  border: 1px solid var(--accent-primary-border);
 }
 
 .tag-failed {
-  background-color: #fff1f2;
-  color: #be123c;
-  border: 1px solid #fecdd3;
+  background-color: var(--accent-danger-soft);
+  color: var(--accent-danger);
+  border: 1px solid var(--accent-danger-border);
 }
 
 .tag-default {
-  background-color: #f1f5f9;
-  color: #475569;
-  border: 1px solid #cbd5e1;
+  background-color: var(--bg-info-item);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
 }
 
 .res-meta-pill {
@@ -2079,9 +2059,9 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   border-radius: 4px;
   font-size: 11px;
   font-family: monospace;
-  color: #475569;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
 }
 
 .response-strip-right {
@@ -2092,23 +2072,23 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 }
 
 .gen-speed-label {
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .gen-speed-val {
   font-weight: 700;
-  color: #4f46e5;
-  background-color: #eef2ff;
+  color: var(--accent-primary);
+  background-color: var(--accent-primary-soft);
   padding: 2px 6px;
   border-radius: 4px;
-  border: 1px solid #e0e7ff;
+  border: 1px solid var(--accent-primary-border);
 }
 
 /* 延时分解部分 */
 .latency-section {
   padding: 14px 16px;
-  border-bottom: 1px solid #f1f5f9;
-  background-color: #ffffff;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-card);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -2123,7 +2103,7 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 
 .latency-title {
   font-weight: 600;
-  color: #334155;
+  color: var(--text-primary);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2135,17 +2115,17 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 
 .latency-total {
   font-size: 11px;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .total-num {
-  color: #0f172a;
+  color: var(--text-primary);
 }
 
 .latency-progress-bar {
   width: 100%;
   height: 10px;
-  background-color: #f1f5f9;
+  background-color: var(--bg-info-item);
   border-radius: 9999px;
   overflow: hidden;
   display: flex;
@@ -2158,7 +2138,7 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 }
 
 .seg-dns {
-  background-color: #94a3b8;
+  background-color: var(--text-secondary);
 }
 
 .seg-ttft {
@@ -2166,7 +2146,7 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 }
 
 .seg-stream {
-  background-color: #10b981;
+  background-color: #34d399;
 }
 
 .latency-legend {
@@ -2190,22 +2170,22 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 }
 
 .dot-slate {
-  background-color: #94a3b8;
+  background-color: var(--text-secondary);
 }
 .dot-amber {
   background-color: #f59e0b;
 }
 .dot-emerald {
-  background-color: #10b981;
+  background-color: #34d399;
 }
 
 .cache-callout {
   margin-top: 4px;
   padding: 10px 12px;
   border-radius: 8px;
-  background-color: rgba(236, 253, 245, 0.7);
-  border: 1px solid rgba(167, 243, 208, 0.7);
-  color: #065f46;
+  background-color: var(--accent-primary-soft);
+  border: 1px solid var(--accent-primary-border);
+  color: var(--accent-primary);
   font-size: 11px;
   line-height: 1.5;
   display: flex;
@@ -2215,14 +2195,14 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 
 .cache-callout-icon {
   font-size: 13px;
-  color: #059669;
+  color: #34d399;
   margin-top: 1px;
   flex-shrink: 0;
 }
 
 .cache-callout-highlight {
   font-weight: 700;
-  color: #065f46;
+  color: var(--accent-primary);
 }
 
 /* 右侧 Tab 内容容器 */
@@ -2237,26 +2217,26 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   align-items: center;
   justify-content: space-between;
   padding-bottom: 10px;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--border-color);
   margin-bottom: 12px;
 }
 
 .assistant-title {
   font-size: 12px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-primary);
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
 .icon-assistant {
-  color: #6366f1;
+  color: var(--accent-primary);
 }
 
 .btn-copy-assistant {
   font-size: 11px;
-  color: #4f46e5;
+  color: var(--accent-primary);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -2266,31 +2246,31 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 }
 
 .btn-copy-assistant:hover {
-  color: #3730a3;
+  color: var(--accent-primary-hover);
 }
 
 .stream-done-pill {
   margin-top: 16px;
   padding: 8px 12px;
   border-radius: 8px;
-  background-color: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background-color: var(--bg-layout);
+  border: 1px solid var(--border-color);
   font-size: 11px;
-  color: #475569;
+  color: var(--text-secondary);
 }
 
 /* Markdown 渲染样式规范 */
 .rendered-markdown {
   font-size: 12.5px;
   line-height: 1.65;
-  color: #334155;
+  color: var(--text-primary);
 }
 
 .rendered-markdown :deep(h1),
 .rendered-markdown :deep(h2),
 .rendered-markdown :deep(h3),
 .rendered-markdown :deep(h4) {
-  color: #0f172a;
+  color: var(--text-primary);
   font-weight: 700;
   margin-top: 12px;
   margin-bottom: 6px;
@@ -2328,14 +2308,14 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 .rendered-markdown :deep(code) {
   font-family: "JetBrains Mono", "Fira Code", monospace;
   font-size: 11.5px;
-  background-color: #f1f5f9;
-  color: #0f172a;
+  background-color: var(--bg-info-item);
+  color: var(--text-primary);
   padding: 2px 5px;
   border-radius: 4px;
 }
 
 .rendered-markdown :deep(pre) {
-  background-color: #0f172a;
+  background-color: var(--bg-code-header);
   padding: 12px 14px;
   border-radius: 8px;
   overflow-x: auto;
@@ -2344,7 +2324,7 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 
 .rendered-markdown :deep(pre code) {
   background-color: transparent;
-  color: #e2e8f0;
+  color: var(--text-primary);
   padding: 0;
   font-size: 11px;
   line-height: 1.5;
@@ -2353,8 +2333,8 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 .rendered-markdown :deep(blockquote) {
   margin: 8px 0;
   padding-left: 12px;
-  border-left: 3px solid #cbd5e1;
-  color: #64748b;
+  border-left: 3px solid var(--border-color);
+  color: var(--text-secondary);
 }
 
 /* 原始 JSON 树视图面板 */
@@ -2364,13 +2344,13 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   justify-content: space-between;
   margin-bottom: 12px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .json-pane-title {
   font-size: 12px;
   font-weight: 600;
-  color: #334155;
+  color: var(--text-primary);
 }
 
 /* SSE 面板 */
@@ -2382,7 +2362,7 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 }
 
 .sse-code-block {
-  background-color: #0f172a;
+  background-color: var(--bg-code-header);
   border-radius: 8px;
   padding: 12px;
   overflow-x: auto;
@@ -2409,23 +2389,23 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   display: inline-block;
   padding: 2px 8px;
   border-radius: 4px;
-  background-color: #fff1f2;
-  color: #e11d48;
-  border: 1px solid #fecdd3;
+  background-color: var(--accent-danger-soft);
+  color: var(--accent-danger);
+  border: 1px solid var(--accent-danger-border);
   font-size: 11px;
   font-weight: 600;
 }
 
 .error-box {
-  background-color: #fff1f2;
-  border: 1px solid #fecdd3;
+  background-color: var(--accent-danger-soft);
+  border: 1px solid var(--accent-danger-border);
   border-radius: 8px;
   padding: 12px;
 }
 
 .error-text {
   margin: 0;
-  color: #be123c;
+  color: var(--accent-danger);
   font-family: monospace;
   font-size: 12px;
   white-space: pre-wrap;
@@ -2434,18 +2414,18 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 
 /* 抽屉底部 */
 .panel-drawer-footer {
-  border-top: 1px solid #e2e8f0;
-  background-color: #f8fafc;
+  border-top: 1px solid var(--border-color);
+  background-color: var(--bg-layout);
   padding: 8px 16px;
   font-size: 11px;
-  color: #64748b;
+  color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
 .footer-enc {
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .no-payload-hint {
@@ -2456,13 +2436,13 @@ async function downloadJson(data: string | null, type: "request" | "response") {
 .no-payload-title {
   font-size: 14px;
   font-weight: 600;
-  color: #475569;
+  color: var(--text-secondary);
   margin-bottom: 4px;
 }
 
 .no-payload-desc {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .empty-holder {
@@ -2478,10 +2458,21 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--scrollbar-thumb);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--scrollbar-thumb-hover);
 }
 </style>
+
+
+
+
+
+
+
+
+
+
+
