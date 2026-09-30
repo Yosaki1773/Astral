@@ -96,13 +96,16 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useAutoRefresh } from '@/composables/useAutoRefresh';
 import { useRecordTable } from '@/composables/useRecordTable';
 import RecordTable from '@/components/common/RecordTable.vue';
 import { useDirectoryStore } from '@/stores/directory';
+import { useAppStore } from '@/stores/app';
+import { RunMode } from '@/types/system';
 
 const directoryStore = useDirectoryStore();
+const appStore = useAppStore();
 
 const userOptions = ref<{ value: number; label: string }[]>([]);
 const modelOptions = ref<{ value: number; label: string }[]>([]);
@@ -135,6 +138,11 @@ const {
     handleDateChange,
 } = useRecordTable();
 
+// worker 模式下 D1 写入配额紧张：默认关闭自动刷新、且把间隔改回 30 秒
+// node 模式保持原有行为：默认开启、5 秒刷新一次
+const isWorkerMode = computed(() => appStore.mode === RunMode.WORKER);
+const autoRefreshDefaultOn = ref(false);
+
 const {
     isRunning: autoRefreshEnabled,
     start: startAutoRefresh,
@@ -143,11 +151,28 @@ const {
 } = useAutoRefresh({
     callback: () => loadData(),
     defaultInterval: 5000,
-    immediate: true,
+    immediate: false,
 });
 
-onMounted(() => {
+function applyAutoRefreshDefault() {
+    if (autoRefreshDefaultOn.value) {
+        void startAutoRefresh();
+    } else {
+        stopAutoRefresh();
+    }
+}
+
+onMounted(async () => {
     void loadSelectOptions();
+    if (!appStore.mode) {
+        try {
+            await appStore.fetchStatus();
+        } catch (error) {
+            console.error('Failed to fetch app status:', error);
+        }
+    }
+    autoRefreshDefaultOn.value = !isWorkerMode.value;
+    applyAutoRefreshDefault();
 });
 
 onUnmounted(() => {
