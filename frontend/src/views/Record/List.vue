@@ -70,7 +70,7 @@
                 <a-space>
                     <a-tooltip title="自动刷新">
                         <a-switch
-                            v-model:checked="autoRefreshEnabled"
+                            :checked="autoRefreshEnabled"
                             checked-children="开"
                             un-checked-children="关"
                             @change="handleAutoRefreshChange"
@@ -141,29 +141,23 @@ const {
 // worker 模式下 D1 写入配额紧张：默认关闭自动刷新、且把间隔改回 30 秒
 // node 模式保持原有行为：默认开启、5 秒刷新一次
 const isWorkerMode = computed(() => appStore.mode === RunMode.WORKER);
-const autoRefreshDefaultOn = ref(false);
 
 const {
     isRunning: autoRefreshEnabled,
     start: startAutoRefresh,
     stop: stopAutoRefresh,
+    setIntervalValue,
     remainingSeconds,
 } = useAutoRefresh({
     callback: () => loadData(),
-    defaultInterval: 5000,
+    defaultInterval: 30000,
     immediate: false,
 });
 
-function applyAutoRefreshDefault() {
-    if (autoRefreshDefaultOn.value) {
-        void startAutoRefresh();
-    } else {
-        stopAutoRefresh();
-    }
-}
-
 onMounted(async () => {
     void loadSelectOptions();
+    void loadData();
+
     if (!appStore.mode) {
         try {
             await appStore.fetchStatus();
@@ -171,8 +165,14 @@ onMounted(async () => {
             console.error('Failed to fetch app status:', error);
         }
     }
-    autoRefreshDefaultOn.value = !isWorkerMode.value;
-    applyAutoRefreshDefault();
+
+    if (isWorkerMode.value) {
+        setIntervalValue(30000);
+        stopAutoRefresh();
+    } else {
+        setIntervalValue(5000);
+        void startAutoRefresh();
+    }
 });
 
 onUnmounted(() => {
