@@ -6,6 +6,10 @@ import { clearAuthToken, getAuthToken, setAuthToken } from '@/utils/authSession'
 export const useAuthStore = defineStore('auth', () => {
     const token = ref<string>(getAuthToken());
     const userType = ref<string>('');
+    // 当前登录用户 id：用于「不能修改自己」等判断（root 为 -1，多租户下 id 全局唯一）
+    const userId = ref<number | null>(null);
+    // 当前登录用户名：顶栏展示（root 为 "Root"）
+    const userName = ref<string>('');
     const isLoading = ref(false);
 
     const isAuthenticated = computed(() => !!token.value);
@@ -19,6 +23,8 @@ export const useAuthStore = defineStore('auth', () => {
     function clearToken() {
         token.value = '';
         userType.value = '';
+        userId.value = null;
+        userName.value = '';
         clearAuthToken();
     }
 
@@ -33,6 +39,8 @@ export const useAuthStore = defineStore('auth', () => {
             } else {
                 userType.value = 'admin';
             }
+            userId.value = data?.user_id ?? null;
+            userName.value = data?.user_name ?? '';
             return { success: true };
         } catch (error: any) {
             // 只有明确的 401/403 认证失败才清 Token
@@ -63,6 +71,8 @@ export const useAuthStore = defineStore('auth', () => {
     return {
         token,
         userType,
+        userId,
+        userName,
         isLoading,
         isAuthenticated,
         isRoot,

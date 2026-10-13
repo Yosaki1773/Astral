@@ -1,5 +1,5 @@
 import { SgUser } from "../model/sgUser";
-import { ROOT_USER_ID, UserType, BALANCE_SCALE } from "../constants";
+import { ROOT_USER_ID, UserType, BALANCE_SCALE, PLACEHOLDER_ROOT_TOKENS } from "../constants";
 import userManager from "../manager/userManager";
 import rechargeRecordManager from "../manager/rechargeRecordManager";
 import configService from "./configService";
@@ -28,11 +28,25 @@ async function sha256(input: string): Promise<Uint8Array> {
     return new Uint8Array(digest);
 }
 
-async function isRootToken(token: string, rootToken?: string): Promise<boolean> {
+/**
+ * root token 是否已正确配置：非空，且不是随仓库公开的占位值。
+ *
+ * 占位值（文档/compose/wrangler 里统一使用的示例值）等同于「未配置」——
+ * 它公开可见，若被当成有效 root token，任何人都能接管管理面。
+ */
+function isRootTokenConfigured(rootToken?: string): boolean {
     if (!rootToken) {
         return false;
     }
-    const [tokenHash, rootHash] = await Promise.all([sha256(token), sha256(rootToken)]);
+    return !PLACEHOLDER_ROOT_TOKENS.includes(rootToken);
+}
+
+async function isRootToken(token: string, rootToken?: string): Promise<boolean> {
+    const configuredRootToken = rootToken ?? "";
+    if (!isRootTokenConfigured(configuredRootToken)) {
+        return false;
+    }
+    const [tokenHash, rootHash] = await Promise.all([sha256(token), sha256(configuredRootToken)]);
     return constantTimeEqualBytes(tokenHash, rootHash);
 }
 
@@ -63,7 +77,7 @@ async function adjustBalance(
     }
 
     // amount 为元，换算成整数微元后做整数加减，避免浮点。
-    // 系统允许负余额（复用 deductBalance 的透支语义），故不做「不能扣成负」守卫；
+    // 系统允许负余额（复用 deductBalance 的透支语义），故不做「不能扣成负」的检查；
     // 余额的扣减门槛统一由请求发起时的 checkBalance 预检负责。
     const amountUnits = toUnits(amount);
     await userManager.incrementBalance(userId, amountUnits);
@@ -110,6 +124,7 @@ async function checkBalance(userId: number, requiredAmount: number): Promise<boo
 
 export default {
     isRootToken,
+    isRootTokenConfigured,
     getUserByToken,
     adjustBalance,
     deductBalance,

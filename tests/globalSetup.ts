@@ -12,6 +12,7 @@ import userFixtures from "./fixtures/userFixtures";
 // Worker mode configuration
 const TEST_WRANGLER_CONFIG = "wrangler.test.toml";
 
+const TEST_ROOT_TOKEN = "test-root-token-for-suite";
 let testServerProcess: ChildProcess | null = null;
 let mockServerProcess: any | null = null;
 let mockProxyProcess: any | null = null;
@@ -47,7 +48,7 @@ process.on("SIGTERM", globalCleanup);
  * Creates an admin user via API if needed, returns the admin token
  */
 async function setupAdminUser(): Promise<string> {
-    const rootToken = "root-token-123";
+    const rootToken = TEST_ROOT_TOKEN;
     const adminToken = userFixtures.ADMIN_TOKEN;
     const adminUser = { name: "Admin User", token: adminToken, type: "admin" };
     console.log("Creating admin user:", adminUser);
@@ -203,7 +204,7 @@ function startTestServer(): Promise<void> {
             command = ["tsx", serverPath];
             env.PORT = port.toString();
             env.DB_PATH = config.DB_CONFIG.path;
-            env.ROOT_TOKEN = "root-token-123";
+            env.ROOT_TOKEN = TEST_ROOT_TOKEN;
             env.TEST_MODE = "node";
         }
 

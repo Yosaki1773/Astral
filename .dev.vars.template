@@ -13,7 +13,7 @@ PORT=8720
 # 监听地址，默认 127.0.0.1（如需对外可改为 0.0.0.0）
 # HOST=127.0.0.1
 # Root 用户的鉴权 Token，用于管理员接口访问（必填，务必修改为自己的）
-ROOT_TOKEN=root-token-123
+ROOT_TOKEN=test-root-token-for-suite
 # 业务数据库文件路径（Node 模式，DB_DRIVER=sqlite 时生效），默认为项目根目录的 local.db
 DB_PATH=./local.db
 # 数据库驱动（Node 模式）：sqlite（默认）/ mysql。

@@ -5,7 +5,7 @@ import { setupAdminUser } from "../../globalSetup";
 import userFixtures from "../../fixtures/userFixtures";
 import vendorFixtures from "../../fixtures/vendorFixtures";
 
-const ROOT_TOKEN = "root-token-123";
+const ROOT_TOKEN = "test-root-token-for-suite";
 const adminToken = userFixtures.ADMIN_TOKEN;
 
 async function scoped(

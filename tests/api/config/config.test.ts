@@ -2,7 +2,7 @@ import { beforeEach, describe, it, expect } from "vitest";
 import requestHelper from "../../helpers/requestHelper";
 import dbHelper from "../../helpers/dbHelper";
 
-const ROOT_TOKEN = "root-token-123";
+const ROOT_TOKEN = "test-root-token-for-suite";
 
 describe("Config API", () => {
     beforeEach(async () => {
