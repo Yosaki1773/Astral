@@ -15,7 +15,7 @@ function requireFixture(fileName: string): string {
 
 function parseOpenAIStream(content: string) {
     const accumulator = new openaiChatAccumulator.OpenAIChatAccumulator();
-    const events = content.split("\n\n").filter((event) => event.trim());
+    const events = content.replace(/\r\n/g, "\n").split("\n\n").filter((event) => event.trim());
 
     for (const event of events) {
         const dataMatch = event.match(/^data:\s*(.+)$/m);
@@ -96,6 +96,67 @@ describe("OpenAIChatAccumulator stream state", () => {
         expect(acc.getError()).toMatchObject({ type: "error" });
     });
 
+    it("does not mark completed when [DONE] follows an upstream error", () => {
+        const acc = new openaiChatAccumulator.OpenAIChatAccumulator();
+        acc.addEvent({ data: JSON.stringify({ error: { message: "upstream boom", type: "server_error" } }) });
+        acc.addEvent({ data: "[DONE]" });
+
+        expect(acc.isErrored()).toBe(true);
+        expect(acc.isCompleted()).toBe(false);
+    });
+
+    it("keeps completed when an error arrives after [DONE]", () => {
+        const acc = new openaiChatAccumulator.OpenAIChatAccumulator();
+        acc.addEvent({ data: "[DONE]" });
+        // 终止标记之后的上游噪声不得推翻已成立的完成态
+        acc.addEvent({ data: JSON.stringify({ error: { message: "late noise", type: "server_error" } }) });
+
+        expect(acc.isCompleted()).toBe(true);
+        expect(acc.isErrored()).toBe(true);
+    });
+
+    it("does not treat a null error field as an upstream error", () => {
+        const acc = new openaiChatAccumulator.OpenAIChatAccumulator();
+        acc.addEvent({ data: JSON.stringify({ choices: [{ delta: { content: "hi" } }], error: null }) });
+
+        expect(acc.isErrored()).toBe(false);
+    });
+
+    it("does not complete an incomplete multi-choice stream at EOF", () => {
+        const acc = new openaiChatAccumulator.OpenAIChatAccumulator(2);
+        acc.addEvent({ data: JSON.stringify({ choices: [{ index: 0, delta: { content: "first" }, finish_reason: "stop" }] }) });
+        acc.onUpstreamEnd();
+
+        expect(acc.isCompleted()).toBe(false);
+    });
+
+    it("completes a multi-choice stream when every choice finishes at EOF", () => {
+        const acc = new openaiChatAccumulator.OpenAIChatAccumulator(2);
+        acc.addEvent({ data: JSON.stringify({ choices: [{ index: 1, delta: { content: "second" }, finish_reason: "stop" }] }) });
+        acc.addEvent({ data: JSON.stringify({ choices: [{ index: 0, delta: { content: "first" }, finish_reason: "stop" }] }) });
+        acc.onUpstreamEnd();
+
+        expect(acc.isCompleted()).toBe(true);
+    });
+
+    it("does not complete when an observed choice has no finish reason", () => {
+        const acc = new openaiChatAccumulator.OpenAIChatAccumulator(2);
+        acc.addEvent({ data: JSON.stringify({ choices: [
+            { index: 0, delta: { content: "first" }, finish_reason: "stop" },
+            { index: 1, delta: { content: "second" }, finish_reason: null },
+        ] }) });
+        acc.onUpstreamEnd();
+
+        expect(acc.isCompleted()).toBe(false);
+    });
+
+    it("completes a single-choice stream at EOF by default", () => {
+        const acc = new openaiChatAccumulator.OpenAIChatAccumulator();
+        acc.addEvent({ data: JSON.stringify({ choices: [{ delta: { content: "hi" }, finish_reason: "stop" }] }) });
+        acc.onUpstreamEnd();
+
+        expect(acc.isCompleted()).toBe(true);
+    });
     it("getUsage returns accumulated usage", () => {
         const acc = new openaiChatAccumulator.OpenAIChatAccumulator();
         acc.addEvent({ data: JSON.stringify({ choices: [{ delta: { content: "hi" }, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 3 } }) });

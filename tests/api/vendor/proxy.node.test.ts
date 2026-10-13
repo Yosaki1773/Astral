@@ -12,7 +12,7 @@ import requestHelper from "../../helpers/requestHelper";
 import dbHelper from "../../helpers/dbHelper";
 
 
-const ROOT_TOKEN = "root-token-123";
+const ROOT_TOKEN = "test-root-token-for-suite";
 const MOCK_PROXY_URL = "http://localhost:9997";
 const MOCK_SOCKS_URL = "socks5://localhost:9996";
 const MOCK_SERVER_URL = "http://localhost:9999";

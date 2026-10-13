@@ -46,9 +46,18 @@ interface OpenAIChatChunk {
 }
 
 export class OpenAIChatAccumulator extends AccumulatorBase {
+    private readonly expectedChoiceCount: number;
+    private observedChoiceIndexes = new Set<number>();
     private response: AccumulatedResponse = {
         choices: [{ index: 0, message: { content: "", thinking: "", signature: "" }, finish_reason: null }],
     };
+
+    constructor(expectedChoiceCount = 1) {
+        super();
+        this.expectedChoiceCount = Number.isInteger(expectedChoiceCount) && expectedChoiceCount > 0
+            ? expectedChoiceCount
+            : 1;
+    }
 
     /**
      * 添加一条客户端 SSE 事件（原始 data 字符串）
@@ -72,8 +81,8 @@ export class OpenAIChatAccumulator extends AccumulatorBase {
             return;
         }
 
-        // 错误事件检测
-        if ((parsed as any)?.type === "error" || (parsed as any)?.error !== undefined) {
+        // 错误事件检测（error 用 != null 判定：上游报文里显式的 error: null 不是错误）
+        if ((parsed as any)?.type === "error" || (parsed as any)?.error != null) {
             this.markError(parsed);
             return;
         }
@@ -82,6 +91,23 @@ export class OpenAIChatAccumulator extends AccumulatorBase {
         // （保留原 `!isCompleted` 的 TTFT 语义：含 role:assistant 等首 chunk）
         this.markOutputStarted();
         this.handleOpenAIMessage(parsed);
+    }
+
+    /**
+     * 上游流干净结束：已收到 finish_reason 说明本轮生成结束、usage 也已累积到位，
+     * 只是上游省略了冗余的 [DONE] —— 补记完成，让请求按成功结算。
+     */
+    public override onUpstreamEnd(): void {
+        if (this.response.choices.length < this.expectedChoiceCount) {
+            return;
+        }
+
+        const expectedChoices = Array.from({ length: this.expectedChoiceCount }, (_, index) => index);
+        if (expectedChoices.every((index) =>
+            this.observedChoiceIndexes.has(index) && this.response.choices[index]?.finish_reason != null,
+        )) {
+            this.markCompleted();
+        }
     }
 
     /**
@@ -98,6 +124,7 @@ export class OpenAIChatAccumulator extends AccumulatorBase {
         if (msg.choices) {
             for (const choice of msg.choices) {
                 const index = choice.index ?? 0;
+                this.observedChoiceIndexes.add(index);
 
                 // 确保 choices 数组足够大
                 while (this.response.choices.length <= index) {
@@ -236,6 +263,7 @@ export class OpenAIChatAccumulator extends AccumulatorBase {
                 { index: 0, message: { content: "", thinking: "", signature: "" }, finish_reason: null },
             ],
         };
+        this.observedChoiceIndexes = new Set<number>();
         this.resetState();
     }
 }

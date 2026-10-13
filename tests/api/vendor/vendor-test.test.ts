@@ -3,7 +3,7 @@ import requestHelper from '../../helpers/requestHelper';
 import dbHelper from '../../helpers/dbHelper';
 
 describe('Vendor Test API', () => {
-    let rootToken = 'root-token-123';
+    let rootToken = 'test-root-token-for-suite';
 
     beforeAll(async () => {
         await dbHelper.truncate();

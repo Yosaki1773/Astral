@@ -81,6 +81,7 @@ async function sendRequestToUpstream(
     clientFormat: ApiFormat,
     upstreamFormat: ApiFormat,
     body: string,
+    expectedChoiceCount = 1,
 ): Promise<Response> {
     // 客户端格式与最终上游格式已在 sendRequest 解析好，这里直接使用
     const needsConversion = clientFormat !== upstreamFormat;
@@ -306,7 +307,7 @@ async function sendRequestToUpstream(
 
     // 8. 按响应类型分发处理（三种协议统一走 responseHandlerService，按 clientFormat 选累加器/解析口径）
     if (isStream) {
-        return responseHandlerService.handleStreamResponse(c, upstreamRes, record, modelConfig, user, clientFormat, upstreamFormat, converter);
+        return responseHandlerService.handleStreamResponse(c, upstreamRes, record, modelConfig, user, clientFormat, upstreamFormat, converter, expectedChoiceCount);
     }
     return responseHandlerService.handleNonStreamResponse(c, upstreamRes, record, modelConfig, user, upstreamFormat, converter);
 }
@@ -352,6 +353,17 @@ async function sendRequest(
     // 一条用户请求 = 一条 record：进入路由循环前创建一次，跨上游尝试更新同一条记录
     const record = await recordService.create(user.id, modelConfig.id, body, clientFormat, tenantId);
     const recordId = Number(record.id);
+    let expectedChoiceCount = 1;
+    if (clientFormat === ApiFormat.OPENAI) {
+        try {
+            const requestJson = JSON.parse(body);
+            if (Number.isInteger(requestJson.n) && requestJson.n > 0) {
+                expectedChoiceCount = requestJson.n;
+            }
+        } catch {
+            // Request validation is handled by the protocol route before dispatch.
+        }
+    }
 
     try {
         // 每个原始请求一个路由上下文，记录已用后端，避免重试循环
@@ -483,6 +495,7 @@ async function sendRequest(
                     clientFormat,
                     upstreamFormat,
                     body,
+                    expectedChoiceCount,
                 );
 
                 // 上游返回非成功响应，转成异常统一走下面的失败处理点，尝试下一个上游

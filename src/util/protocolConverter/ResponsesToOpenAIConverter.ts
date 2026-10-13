@@ -707,7 +707,7 @@ export class ResponsesToOpenAIConverter extends BaseConverter {
                             cached_tokens: this.cacheReadTokens,
                         } : undefined,
                         output_tokens: this.outputTokens,
-                        total_tokens: this.inputTokens + this.cacheReadTokens + this.outputTokens,
+                        total_tokens: this.inputTokens + this.outputTokens,
                     },
                 },
             }),
@@ -715,6 +715,10 @@ export class ResponsesToOpenAIConverter extends BaseConverter {
 
         // reset state
         this.resetState();
+    }
+
+    public override onUpstreamEnd(): ProtocolStreamEvent[] {
+        return this.finishReason !== null ? this.handleDoneEvent() : [];
     }
 
     protected override handleDoneEvent(): ProtocolStreamEvent[] {

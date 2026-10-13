@@ -16,6 +16,7 @@ import abortTimeoutUtil from "../util/abortTimeoutUtil";
 import userService from "./userService";
 import streamLogService from "./streamLogService";
 import usageUtils, { type Dict } from "../util/protocol/usageUtil";
+import upstreamFailureUtil from "../util/protocol/upstreamFailureUtil";
 import openaiChatAccumulator from "../util/accumulator/openaiChatAccumulator";
 import anthropicAccumulator from "../util/accumulator/anthropicAccumulator";
 import responsesAccumulator from "../util/accumulator/responsesAccumulator";
@@ -99,6 +100,24 @@ async function runSSELoop(
         upstreamReader.cancel().catch(() => {});
     });
 
+    // 投递一组客户端事件：先喂旁路累加器（只记录流状态供收尾判定成败，不决定是否转发 ——
+    // 上游的错误事件因此会照常下发，客户端能看到错误详情，而不是只等到一条被截断的流，
+    // HTTP 已是 200，SSE 体是唯一的错误通道），再写 SSE。主循环与 EOF 收尾共用。
+    async function deliverClientEvents(clientEvents: ProtocolStreamEvent[]): Promise<void> {
+        for (const clientEvent of clientEvents) {
+            if (!clientEvent.data) continue;
+
+            accumulator.addEvent(clientEvent);
+            if (accumulator.isErrored() && failedCode === null) {
+                failedCode = accumulator.isParseFailed()
+                    ? FailedCode.SSE_PARSE_ERROR
+                    : FailedCode.UPSTREAM_ERROR;
+            }
+
+            await writeEventToClient(stream, clientEvent);
+        }
+    }
+
     try {
         while (true) {
             const result = await abortTimeoutUtil.raceWithTimeout(
@@ -109,7 +128,26 @@ async function runSSELoop(
                     upstreamReader.cancel().catch(() => {});
                 },
             );
-            if (result.done) break;
+            if (result.done) {
+                const finalChunk = decoder.decode();
+                if (finalChunk) {
+                    streamLogService.appendStreamLog(logStream, finalChunk);
+                    buffer += finalChunk;
+                }
+
+                // A non-empty remainder lacks the SSE event delimiter and is a truncated frame.
+                if (buffer.trim()) {
+                    failedCode = failedCode ?? FailedCode.SSE_PARSE_ERROR;
+                    break;
+                }
+
+                // 上游干净结束（EOF，不是超时/断开）：部分 OpenAI 兼容上游会给全内容、finish_reason
+                // 与 usage，却省略冗余的 [DONE] 直接关连接。此时数据是完整的，交给协议侧各自收尾。
+                const tailEvents = opts.converter ? opts.converter.onUpstreamEnd() : [];
+                await deliverClientEvents(tailEvents);
+                accumulator.onUpstreamEnd();
+                break;
+            }
 
             const chunk = decoder.decode(result.value, { stream: true });
             streamLogService.appendStreamLog(logStream, chunk);
@@ -129,25 +167,15 @@ async function runSSELoop(
                     ? opts.converter.convertStreamEvent(upstreamEvent.data, upstreamEvent.event, upstreamEvent.id)
                     : [upstreamEvent];
 
-                for (const clientEvent of clientEvents) {
-                    if (!clientEvent.data) continue;
+                await deliverClientEvents(clientEvents);
+            }
 
-                    accumulator.addEvent(clientEvent);
-
-                    // 出错后不再转发给客户端：记失败码（未记录时）并中止
-                    if (accumulator.isErrored()) {
-                        if (failedCode === null) {
-                            failedCode = accumulator.isParseFailed()
-                                ? FailedCode.SSE_PARSE_ERROR
-                                : FailedCode.UPSTREAM_ERROR;
-                        }
-                        break;
-                    }
-
-                    await writeEventToClient(stream, clientEvent);
-                }
-
-                if (failedCode !== null) break;
+            // 逻辑上已经结束——正常收尾（收到终止标记）或已出错——就不必再等上游关连接了，
+            // 立即收尾。否则上游发完终止标记后挂着不断开时，客户端要等空闲超时（默认 180s）
+            // 才能拿到流结束，收尾落库（含成功计费）也被拖到那时。
+            if (accumulator.isCompleted() || failedCode !== null) {
+                upstreamReader.cancel().catch(() => {});
+                break;
             }
         }
     } catch (e: any) {
@@ -183,8 +211,8 @@ function finalizeStreamResult(
     let { accumulator, failedCode } = state;
 
     runInBackgroundUtil.runInBackground(c, async () => {
-        // 响应已完整接收（[DONE] / message_stop / response.completed）时优先视为成功：
-        // 即使随后客户端或上游连接断开，也可能只是客户端拿到完整结果后提前关闭了连接
+        // 已完整接收即视为成功：即使随后连接断开，也可能只是客户端拿到完整结果后提前关闭
+        // （客户端断开 / 上游超时不置 errored，不该覆盖成功）；标志语义见 AccumulatorBase
         if (accumulator.isCompleted()) {
             const fullResponse = accumulator.getResponse();
             const normalizedUsage = usageUtils.normalizeUsage(ApiFormat.OPENAI, accumulator.getUsage() as Dict | null);
@@ -297,6 +325,38 @@ export async function handleNonStreamResponse(
         return c.body(responseText);
     }
 
+    // 上游也可能把失败放进 HTTP 200 的响应体里（按协议各自的失败形态判定，见 upstreamFailureUtil）。
+    // 只看状态码会把这类失败记成成功：status 记 success、failed_code 空着、活动日志记"请求成功"。
+    const bodyFailure = upstreamFailureUtil.detectUpstreamBodyFailure(upstreamFormat, responseText);
+    if (bodyFailure !== null) {
+        console.error("[responseHandlerService] Upstream failure inside a 200 response body:", {
+            recordId: record.id,
+            upstreamErrorCode: bodyFailure.code,
+            body: responseText,
+        });
+
+        await recordService.update(record.id, {
+            response_data: responseText,
+            status: SgRecordStatus.FAILED,
+            failed_code: FailedCode.UPSTREAM_ERROR,
+            usage: null,
+            end_at: new Date(),
+            cost: 0,
+            first_token_latency: Date.now() - record.created_at.getTime(),
+        });
+        await requestActivityService.append(record.id, RequestActivityStage.RESULT, "上游在响应体中返回失败", {
+            status: SgRecordStatus.FAILED,
+            upstream_status: statusCode,
+            upstream_error_code: bodyFailure.code,
+            response_body: responseText,
+        }, ActivityLevel.ERROR);
+
+        // 响应仍按上游原样透传（HTTP 200 + 失败体），不擅自改成 5xx，保持上游协议语义
+        c.status(statusCode);
+        c.res.headers.set("Content-Type", upstreamRes.headers.get("content-type") || "application/json");
+        return c.body(responseText);
+    }
+
     let clientResponseText = responseText;
     if (converter) {
         try {
@@ -368,6 +428,7 @@ export async function handleStreamResponse(
     format: ApiFormat,
     upstreamFormat: ApiFormat = format,
     converter: BaseConverter | null = null,
+    expectedChoiceCount = 1,
 ): Promise<Response> {
     const logStream = await streamLogService.prepareStreamLog(record);
 
@@ -377,7 +438,7 @@ export async function handleStreamResponse(
     } else if (format === ApiFormat.RESPONSES) {
         accumulator = new responsesAccumulator.ResponsesAccumulator();
     } else {
-        accumulator = new openaiChatAccumulator.OpenAIChatAccumulator();
+        accumulator = new openaiChatAccumulator.OpenAIChatAccumulator(expectedChoiceCount);
     }
 
     return streamSSE(c, async (stream: SSEStreamingApi) => {

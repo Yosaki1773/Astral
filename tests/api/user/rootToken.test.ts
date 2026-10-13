@@ -12,7 +12,7 @@ import userFixtures from "../../fixtures/userFixtures";
  * Tests for the root token functionality
  */
 
-const ROOT_TOKEN = "root-token-123";
+const ROOT_TOKEN = "test-root-token-for-suite";
 const INVALID_ROOT_TOKEN = "invalid-root-token";
 let adminToken = userFixtures.ADMIN_TOKEN;
 

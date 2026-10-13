@@ -4,7 +4,7 @@ import dbHelper from '../../helpers/dbHelper';
 import modelFixtures from '../../fixtures/modelFixtures';
 
 describe('Batch API', () => {
-    let rootToken = 'root-token-123';
+    let rootToken = 'test-root-token-for-suite';
 
     beforeAll(async () => {
         await dbHelper.truncate();

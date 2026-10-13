@@ -55,7 +55,7 @@ npm install
 
 ```bash
 # .dev.vars
-ROOT_TOKEN=root-token-123
+ROOT_TOKEN=your-local-random-token
 PORT=8720
 RECORD_LOG_ENABLED=false
 ```
@@ -104,7 +104,7 @@ APP_VERSION=dev-20260821
 
 | Token 类型 | 建议值 | 说明 |
 |------|--------|------|
-| **Root Token** | `root-token-123` | 系统最高权限。用于初次登录管理后台、创建其他管理员或普通用户。需配置在 `.dev.vars` 的 `ROOT_TOKEN` 中。 |
+| **Root Token** | `your-local-random-token` | 系统最高权限。请替换为本地随机值，用于初次登录管理后台、创建其他管理员或普通用户。需配置在 `.dev.vars` 的 `ROOT_TOKEN` 中。 |
 | **Admin Token** | `admin-token-for-test` | 测试环境下预设的管理员 Token。在运行后端测试（`npm run backend:test`）时，系统会自动创建一个使用此 Token 的管理员用户。 |
 
 > **注意**：以上 Token 仅建议在**本地开发和测试环境**中使用。生产环境部署时，请务必通过 Cloudflare Workers 环境变量配置复杂的随机字符串作为 `ROOT_TOKEN`。

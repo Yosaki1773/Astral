@@ -7,7 +7,7 @@ import vendorFixtures from "../../fixtures/vendorFixtures";
 import userFixtures from "../../fixtures/userFixtures";
 
 const adminToken = userFixtures.ADMIN_TOKEN;
-const ROOT_TOKEN = "root-token-123";
+const ROOT_TOKEN = "test-root-token-for-suite";
 
 let seq = 0;
 function unique(prefix: string): string {

@@ -32,9 +32,30 @@ export abstract class AccumulatorBase {
 
     /**
      * 标记流已完整接收（子类在识别到结束事件时调用）
+     * 已出过错时不算完成：否则 completed 会压过 errored，把一次上游报错记成成功并计费。
+     * 这段判断放这里（而不是各个完成入口各写一遍）才能覆盖全部入口，含以后新增的。
+     * 只拦 errored：客户端断开 / 上游超时只写循环层的 failedCode、不置 errored，
+     * 所以"客户端已拿到完整结果后断开"仍按成功记账。
      */
     protected markCompleted(): void {
+        if (this.errored) {
+            return;
+        }
         this.completed = true;
+    }
+
+    /**
+     * 上游流干净结束（EOF）时的收尾自检：本流数据已齐则标记完成。
+     *
+     * 默认空实现：Anthropic / Responses 的终止事件承载信息（stop_reason / usage / 完整
+     * response），缺失即为真截断，不能据 EOF 收尾。只有 OpenAI chat completions 需要覆写 ——
+     * 它的终止标记 [DONE] 是冗余的，部分兼容上游省略它直接关闭连接，此时数据其实已齐全。
+     *
+     * 由 responseHandlerService 在 EOF 分支调用（超时 / 上游断开 / 客户端断开等不调用）。
+     * markCompleted 内部「已出错就不算完成」的判断仍然生效：上游报过错再收尾的畸形流不会记成完成。
+     */
+    public onUpstreamEnd(): void {
+        // 默认无需收尾
     }
 
     /**
@@ -72,14 +93,17 @@ export abstract class AccumulatorBase {
     }
 
     /**
-     * 是否收到流结束标记
+     * 是否按协议正常收尾——即收到了协议定义的终止标记（[DONE] / message_stop / response.completed）。
+     * 只描述"流正常结束了"这一协议层事实，不等于这次请求成功（业务成败由 record 层的
+     * SgRecordStatus 判定）：上游中途报错 / 断连没有终止标记，已收到过错误事件的也不置位
+     * （见 markCompleted）。
      */
     isCompleted(): boolean {
         return this.completed;
     }
 
     /**
-     * 是否收到错误事件
+     * 是否收到错误事件（上游明确报错，或数据块无法解析）
      */
     isErrored(): boolean {
         return this.errored;

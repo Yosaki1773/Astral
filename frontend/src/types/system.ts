@@ -45,6 +45,10 @@ export interface StatusResponse {
     status?: string;
     mode?: RunMode;
     user_type?: string;
+    /** 调用方用户 id（root 为 -1） */
+    user_id?: number | null;
+    /** 调用方用户名（root 为 "Root"） */
+    user_name?: string | null;
     tenant?: TenantStatus;
     system?: SystemStatusInfo;
     statistics?: SystemStatistics;
