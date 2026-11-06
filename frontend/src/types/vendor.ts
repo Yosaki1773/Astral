@@ -18,6 +18,10 @@ export interface VendorUrls {
 export interface VendorConfig {
     auth_mode?: VendorAuthMode;
     skip_tls_verify?: boolean;
+    /** 是否开启自定义上游 User-Agent；false/缺省时网关不注入 UA 头 */
+    user_agent_enabled?: boolean;
+    /** 自定义 User-Agent 值，仅开启时生效；空白时使用默认 claude-cli 值 */
+    user_agent?: string;
     proxy?: VendorProxyConfig | null;
     [key: string]: any;
 }

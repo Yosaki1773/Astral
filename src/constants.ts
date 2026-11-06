@@ -124,6 +124,9 @@ export const PLACEHOLDER_ROOT_TOKENS = [
 // 主租户名：自动生成、不可删除；多租户隔离关闭时所有请求固定落入该租户
 export const DEFAULT_TENANT_NAME = "main";
 
+// 供应商开启自定义 User-Agent 且未填写时的默认值
+export const DEFAULT_UPSTREAM_USER_AGENT = "claude-cli/2.1.161 (external, cli)";
+
 export enum ConfigKey {
     CCH_REWRITE_ENABLED = "cch_rewrite_enabled",
     RESPONSES_PROMPT_CACHE_KEY_ENABLED = "responses_prompt_cache_key_enabled",

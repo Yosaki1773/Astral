@@ -68,6 +68,12 @@ function buildRequest(
         });
     }
 
+    // 与网关生产路径一致的 User-Agent：按供应商开关配置，关闭时不注入
+    const vendorUserAgent = vendor.config.getUserAgent();
+    if (vendorUserAgent) {
+        headers.set("User-Agent", vendorUserAgent);
+    }
+
     return { headers, body };
 }
 

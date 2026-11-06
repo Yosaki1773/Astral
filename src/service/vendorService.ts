@@ -5,20 +5,27 @@ import vendorManager from "../manager/vendorManager";
 
 
 /**
- * 校验代理配置：代理类型与 URL scheme 必须匹配
+ * 校验供应商配置：代理类型与 URL scheme 必须匹配；自定义 UA 开启时限制长度
  */
-function validateProxyConfig(config?: Record<string, any>): void {
+function validateVendorConfig(config?: Record<string, any>): void {
     const proxy = config?.proxy;
-    if (!proxy || !proxy.url) return;
+    if (proxy && proxy.url) {
+        const url = proxy.url as string;
+        const isSocks = url.startsWith("socks");
 
-    const url = proxy.url as string;
-    const isSocks = url.startsWith("socks");
-
-    if (proxy.type === "http" && isSocks) {
-        throw new customError.AppError("代理类型为 HTTP，但 URL 使用了 SOCKS 协议");
+        if (proxy.type === "http" && isSocks) {
+            throw new customError.AppError("代理类型为 HTTP，但 URL 使用了 SOCKS 协议");
+        }
+        if (proxy.type === "socks5" && !isSocks) {
+            throw new customError.AppError("代理类型为 SOCKS5，但 URL 不是 SOCKS 协议");
+        }
     }
-    if (proxy.type === "socks5" && !isSocks) {
-        throw new customError.AppError("代理类型为 SOCKS5，但 URL 不是 SOCKS 协议");
+
+    if (config?.user_agent_enabled) {
+        const ua = typeof config.user_agent === "string" ? config.user_agent.trim() : "";
+        if (ua.length > 512) {
+            throw new customError.AppError("User-Agent 过长（最多 512 字符）", 400);
+        }
     }
 }
 
@@ -28,7 +35,7 @@ async function updateVendor(
     data: { type?: string; name?: string; token?: string; urls?: Record<string, string>; config?: Record<string, any> },
     tenantId?: number,
 ): Promise<SgVendor | null> {
-    validateProxyConfig(data.config);
+    validateVendorConfig(data.config);
 
     const vendor = tenantId !== undefined
         ? await vendorManager.findByIdInTenant(vendorId, tenantId)
@@ -131,13 +138,20 @@ export async function fetchUpstreamModels(vendor: SgVendor): Promise<string[]> {
     const token = vendor.token;
     const authHeader = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
 
+    // 获取模型列表与网关请求保持一致的 User-Agent 口径
+    const vendorUserAgent = vendor.config.getUserAgent();
+    const requestHeaders: Record<string, string> = {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+    };
+    if (vendorUserAgent) {
+        requestHeaders["User-Agent"] = vendorUserAgent;
+    }
+
     try {
         const response = await fetch(modelsUrl, {
             method: "GET",
-            headers: {
-                Authorization: authHeader,
-                "Content-Type": "application/json",
-            },
+            headers: requestHeaders,
         });
 
         if (!response.ok) {
@@ -166,5 +180,5 @@ export default {
     updateVendor,
     findVendorByUrl,
     fetchUpstreamModels,
-    validateProxyConfig,
+    validateVendorConfig,
 };

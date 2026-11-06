@@ -160,6 +160,12 @@ async function sendRequestToUpstream(
     // 强制设置 content-type
     finalHeaders.set("Content-Type", "application/json");
 
+    // 上游 User-Agent：按供应商开关配置；关闭时不注入（上游只见运行时默认 UA）
+    const vendorUserAgent = vendor.config.getUserAgent();
+    if (vendorUserAgent) {
+        finalHeaders.set("User-Agent", vendorUserAgent);
+    }
+
     // 3. 替换上游模型名
     let upstreamBody = body;
     // 显式上游替换成 vendor model 名；自动上游名与网关模型名一致，替换为无操作

@@ -104,6 +104,15 @@
                     </a-select>
                 </div>
                 <div class="settings-row">
+                    <label class="settings-label">自定义 User-Agent</label>
+                    <a-switch v-model:checked="formState.user_agent_enabled" />
+                </div>
+                <div class="settings-row" v-if="formState.user_agent_enabled">
+                    <label class="settings-label">User-Agent</label>
+                    <a-input v-model:value="formState.user_agent" style="flex: 1" allow-clear
+                             placeholder="留空使用默认：claude-cli/2.1.161 (external, cli)" />
+                </div>
+                <div class="settings-row">
                     <label class="settings-label">代理配置</label>
                     <a-select v-model:value="formState.proxy_type" style="flex: 1" allow-clear>
                         <a-select-option :value="null">不使用</a-select-option>
@@ -153,6 +162,8 @@ const formState = reactive({
     name: '',
     token: '',
     auth_mode: 'api_key' as VendorAuthMode,
+    user_agent_enabled: false,
+    user_agent: '',
     proxy_type: null as VendorProxyType | null,
     proxy_url: '',
 });
@@ -198,6 +209,8 @@ function open() {
     formState.name = '';
     formState.token = '';
     formState.auth_mode = 'bearer_token';
+    formState.user_agent_enabled = false;
+    formState.user_agent = '';
     formState.proxy_type = null;
     formState.proxy_url = '';
     advancedActiveKey.value = [];
@@ -232,6 +245,8 @@ async function handleOk() {
             token: formState.token,
             config: {
                 auth_mode: formState.auth_mode,
+                user_agent_enabled: formState.user_agent_enabled || undefined,
+                user_agent: formState.user_agent_enabled ? (formState.user_agent.trim() || undefined) : undefined,
                 proxy: formState.proxy_type
                     ? { type: formState.proxy_type, url: formState.proxy_url }
                     : null,

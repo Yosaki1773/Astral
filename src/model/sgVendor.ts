@@ -1,7 +1,7 @@
 import { Model } from "sutando";
 import { CastsAttributes } from "sutando";
 import { inspect, InspectOptions } from "util";
-import { ApiFormat, VendorAuthMode } from "../constants";
+import { ApiFormat, VendorAuthMode, DEFAULT_UPSTREAM_USER_AGENT } from "../constants";
 import vendorDefaultUrls from "../util/vendorDefaultUrlsUtil";
 
 
@@ -17,6 +17,12 @@ class SgVendorConfig extends CastsAttributes {
     /** 是否跳过 TLS 证书验证（用于自签证书等内网环境） */
     skip_tls_verify: boolean = false;
 
+    /** 是否开启自定义上游 User-Agent；false 时不注入 UA 头 */
+    user_agent_enabled: boolean = false;
+
+    /** 自定义 User-Agent 值，仅开启时生效；空白时回退 DEFAULT_UPSTREAM_USER_AGENT */
+    user_agent?: string;
+
     /** 代理配置 */
     proxy?: { type: "http" | "socks5"; url: string } | null;
 
@@ -25,8 +31,16 @@ class SgVendorConfig extends CastsAttributes {
         if (data) {
             if (data.auth_mode !== undefined) this.auth_mode = data.auth_mode;
             if (data.skip_tls_verify !== undefined) this.skip_tls_verify = data.skip_tls_verify;
+            if (data.user_agent_enabled !== undefined) this.user_agent_enabled = data.user_agent_enabled;
+            if (data.user_agent !== undefined) this.user_agent = data.user_agent;
             if (data.proxy !== undefined) this.proxy = data.proxy;
         }
+    }
+
+    /** 生效的 User-Agent；返回空串 = 不注入 UA 头（上游只见运行时默认值） */
+    getUserAgent(): string {
+        if (!this.user_agent_enabled) return "";
+        return this.user_agent?.trim() || DEFAULT_UPSTREAM_USER_AGENT;
     }
 
     /** API 响应序列化（JSON.stringify 自动调用） */
@@ -35,6 +49,9 @@ class SgVendorConfig extends CastsAttributes {
             auth_mode: this.auth_mode,
             skip_tls_verify: this.skip_tls_verify,
         };
+        // UA 字段仅开启/非空时输出，保持默认态 JSON 形状与存量数据一致
+        if (this.user_agent_enabled) result.user_agent_enabled = true;
+        if (this.user_agent?.trim()) result.user_agent = this.user_agent;
         if (this.proxy != null) result.proxy = this.proxy;
         return result;
     }
