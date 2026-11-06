@@ -77,13 +77,7 @@ async function findVendorByUrl(gatewayUrl: string, protocol: ApiFormat): Promise
     const vendors = await vendorManager.listAll();
     for (const vendor of vendors) {
         const mergedUrls = vendor.getMergedUrls();
-        let vendorUrl: string | undefined;
-
-        if (protocol === ApiFormat.RESPONSES) {
-            vendorUrl = mergedUrls[ApiFormat.RESPONSES] || mergedUrls[ApiFormat.OPENAI];
-        } else {
-            vendorUrl = mergedUrls[protocol];
-        }
+        const vendorUrl = mergedUrls[protocol];
 
         if (vendorUrl && gatewayUrl.startsWith(vendorUrl)) {
             return Number(vendor.id);

@@ -89,7 +89,7 @@ describe("vendorService.findVendorByUrl", () => {
         expect(result).toBe(Number(vendor.id));
     });
 
-    it("should fallback to openai URL for RESPONSES protocol", async () => {
+    it("should not match vendor with only openai URL for RESPONSES protocol", async () => {
         const vendor = await createVendor("other", {
             openai: "https://api.example.com/v1",
         });
@@ -99,7 +99,7 @@ describe("vendorService.findVendorByUrl", () => {
             ApiFormat.RESPONSES,
         );
 
-        expect(result).toBe(Number(vendor.id));
+        expect(result).toBeNull();
     });
 
     it("should return null for empty gatewayUrl", async () => {

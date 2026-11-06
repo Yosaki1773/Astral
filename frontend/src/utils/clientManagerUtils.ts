@@ -101,7 +101,7 @@ export function getVendorUrl(vendor: Vendor, protocol: ApiFormat, presetUrls: Re
     const urls = { ...presets, ...vendor.urls };
 
     if (protocol === ApiFormat.RESPONSES) {
-        return urls.responses || urls.openai || '';
+        return urls.responses || '';
     }
 
     return urls.anthropic || '';
