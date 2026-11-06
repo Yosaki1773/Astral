@@ -383,6 +383,49 @@ describe("OpenAIToResponsesConverter", () => {
         });
     });
 
+    // ─── convertStreamEvent 测试 ───
+
+    describe("convertStreamEvent", () => {
+        it("should emit role chunk on response.created", () => {
+            const events = converter.convertStreamEvent(JSON.stringify({
+                type: "response.created",
+                response: { id: "resp_abc", model: "gpt-4" },
+            }));
+
+            expect(events).toHaveLength(1);
+            const chunk = JSON.parse(events[0].data);
+            expect(chunk.choices[0].delta.role).toBe("assistant");
+            expect(chunk.choices[0].delta.content).toBe("");
+        });
+
+        it("should emit content chunk on response.output_text.delta", () => {
+            const events = converter.convertStreamEvent(JSON.stringify({
+                type: "response.output_text.delta",
+                delta: "Hello",
+            }));
+
+            expect(events).toHaveLength(1);
+            const chunk = JSON.parse(events[0].data);
+            expect(chunk.choices[0].delta.content).toBe("Hello");
+        });
+
+        it("should emit finish_reason, usage, and [DONE] on response.completed", () => {
+            const events = converter.convertStreamEvent(JSON.stringify({
+                type: "response.completed",
+                response: {
+                    usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+                },
+            }));
+
+            expect(events).toHaveLength(3);
+            const finishChunk = JSON.parse(events[0].data);
+            expect(finishChunk.choices[0].finish_reason).toBe("stop");
+            const usageChunk = JSON.parse(events[1].data);
+            expect(usageChunk.usage.prompt_tokens).toBe(10);
+            expect(events[2].data).toBe("[DONE]");
+        });
+    });
+
     // ─── ConverterFactory 测试 ───
 
     describe("ConverterFactory", () => {

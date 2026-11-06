@@ -45,14 +45,14 @@ OpenAIToAnthropicConverter
 当前 `ConverterFactory` 支持以下跨协议转换：
 
 | 客户端协议 | 上游协议 | 转换器 | 状态 |
-|------------|----------|--------|------|
+| --- | --- | --- | --- |
 | `openai` | `anthropic` | `OpenAIToAnthropicConverter` | 已支持 |
 | `anthropic` | `openai` | `AnthropicToOpenAIConverter` | 已支持 |
 | `responses` | `anthropic` | `ResponsesToAnthropicConverter` | 已支持 |
 | `anthropic` | `responses` | `AnthropicToResponsesConverter` | 已支持 |
+| `responses` | `openai` | `ResponsesToOpenAIConverter` | 已支持 |
+| `openai` | `responses` | `OpenAIToResponsesConverter` | 已支持 |
 | 相同协议 | 相同协议 | 无转换器 | 直接透传 |
-| `responses` | `openai` | 无 | 暂不支持 |
-| `openai` | `responses` | 无 | 暂不支持 |
 
 如果客户端协议和上游协议不同，但工厂无法创建转换器，网关会返回不支持协议转换的错误。
 
