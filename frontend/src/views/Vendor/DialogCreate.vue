@@ -152,6 +152,7 @@ const advancedActiveKey = ref<string[]>([]);
 const URL_TYPES = [
     { label: 'OpenAI', value: 'openai' },
     { label: 'Anthropic', value: 'anthropic' },
+    { label: 'Responses', value: 'responses' },
 ];
 
 const { presetUrls, vendorTypeOptions, load: loadPresets } = useVendorPresets();

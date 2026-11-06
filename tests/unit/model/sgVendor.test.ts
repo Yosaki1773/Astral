@@ -156,8 +156,14 @@ describe("SgVendor.getUrlByFormat — URL merge & resolution", () => {
             expect(v.getUrlByFormat(ApiFormat.RESPONSES)).toBeNull();
         });
 
-        it("returns null for vendor with only preset openai URL (openai preset)", () => {
+        it("returns openai preset responses URL", () => {
             const v = makeVendor("openai");
+            const url = v.getUrlByFormat(ApiFormat.RESPONSES);
+            expect(url).toBe("https://api.openai.com/v1/responses");
+        });
+
+        it("returns null for vendor with only preset openai URL (opencode_go preset)", () => {
+            const v = makeVendor("opencode_go");
             expect(v.getUrlByFormat(ApiFormat.RESPONSES)).toBeNull();
         });
 

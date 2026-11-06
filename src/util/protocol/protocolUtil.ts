@@ -19,7 +19,7 @@ export function resolveUpstreamFormat(
 
     // 尝试其他支持的格式（按优先级排序）
     const supportedAlternativeFormats: Partial<Record<ApiFormat, ApiFormat[]>> = {
-        [ApiFormat.OPENAI]: [ApiFormat.ANTHROPIC],
+        [ApiFormat.OPENAI]: [ApiFormat.RESPONSES, ApiFormat.ANTHROPIC],
         [ApiFormat.ANTHROPIC]: [ApiFormat.OPENAI, ApiFormat.RESPONSES],
         // RESPONSES 客户端回退优先 OPENAI：Responses 为 OpenAI 原生协议，
         // 转 openai 更贴近原始请求语义（reasoning 映射为 reasoning_effort）
