@@ -128,11 +128,20 @@ function isLlmModel(modelId: string): boolean {
  * 从上游 API 获取模型列表
  */
 export async function fetchUpstreamModels(vendor: SgVendor): Promise<string[]> {
+    let baseUrl: string | null = null;
     const openaiUrl = vendor.getUrlByFormat(ApiFormat.OPENAI);
-    if (openaiUrl === null) {
-        throw new customError.AppError("vendor does not have url for openai format", 400);
+    if (openaiUrl !== null) {
+        baseUrl = openaiUrl.replace(/\/chat\/completions$/, "");
+    } else {
+        const responsesUrl = vendor.getUrlByFormat(ApiFormat.RESPONSES);
+        if (responsesUrl !== null) {
+            baseUrl = responsesUrl.replace(/\/responses$/, "");
+        }
     }
-    const baseUrl = openaiUrl.replace(/\/chat\/completions$/, "");
+
+    if (baseUrl === null) {
+        throw new customError.AppError("vendor does not have url for openai or responses format", 400);
+    }
     const modelsUrl = `${baseUrl}/models`;
 
     const token = vendor.token;

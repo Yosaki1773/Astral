@@ -235,7 +235,14 @@ function openVendorTest(vendor: Vendor, model?: string) {
     testModel.value = model ?? '';
     searchValue.value = '';
     activeTab.value = 'response';
-    format.value = vendor.type === 'anthropic' ? 'anthropic' : 'openai';
+    const urls = vendor.urls ?? {};
+    if (vendor.type === 'anthropic' || (!urls.openai && urls.anthropic && !urls.responses)) {
+        format.value = 'anthropic';
+    } else if (!urls.openai && !urls.anthropic && urls.responses) {
+        format.value = 'responses';
+    } else {
+        format.value = 'openai';
+    }
 
     loadVendorModels(vendor.id, model);
 }
