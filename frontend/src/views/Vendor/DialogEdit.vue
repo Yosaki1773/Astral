@@ -102,6 +102,16 @@
                     <span style="margin-left: 8px; color: #999; font-size: 12px;">当使用自签名证书等场景时使用</span>
                 </div>
                 <div class="settings-row">
+                    <label class="settings-label">自定义 User-Agent</label>
+                    <a-switch v-model:checked="formState.user_agent_enabled" />
+                    <span style="margin-left: 8px; color: #999; font-size: 12px;">开启后请求上游时携带该 User-Agent</span>
+                </div>
+                <div class="settings-row" v-if="formState.user_agent_enabled">
+                    <label class="settings-label">User-Agent</label>
+                    <a-input v-model:value="formState.user_agent" style="flex: 1" allow-clear
+                             placeholder="留空使用默认：claude-cli/2.1.161 (external, cli)" />
+                </div>
+                <div class="settings-row">
                     <label class="settings-label">代理配置</label>
                     <a-select v-model:value="formState.proxy_type" style="flex: 1" allow-clear>
                         <a-select-option :value="null">不使用</a-select-option>
@@ -154,6 +164,8 @@ const formState = reactive({
     token: '',
     auth_mode: 'bearer_token' as VendorAuthMode,
     skip_tls_verify: false,
+    user_agent_enabled: false,
+    user_agent: '',
     proxy_type: null as VendorProxyType | null,
     proxy_url: '',
 });
@@ -200,6 +212,8 @@ async function open(vendor: Vendor) {
     formState.token = vendor.token;
     formState.auth_mode = vendor.config?.auth_mode || 'bearer_token';
     formState.skip_tls_verify = vendor.config?.skip_tls_verify ?? false;
+    formState.user_agent_enabled = vendor.config?.user_agent_enabled ?? false;
+    formState.user_agent = vendor.config?.user_agent ?? '';
     formState.proxy_type = vendor.config?.proxy?.type ?? null;
     formState.proxy_url = vendor.config?.proxy?.url ?? '';
 
@@ -244,6 +258,8 @@ async function handleOk() {
             config: {
                 auth_mode: formState.auth_mode,
                 skip_tls_verify: formState.skip_tls_verify,
+                user_agent_enabled: formState.user_agent_enabled || undefined,
+                user_agent: formState.user_agent_enabled ? (formState.user_agent.trim() || undefined) : undefined,
                 proxy: formState.proxy_type
                     ? { type: formState.proxy_type, url: formState.proxy_url }
                     : null,

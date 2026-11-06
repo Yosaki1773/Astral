@@ -99,7 +99,7 @@ async function createVendor(c: Context) {
         throw new customError.AppError("A vendor with this name already exists", 409);
     }
 
-    vendorService.validateProxyConfig(vendor.config);
+    vendorService.validateVendorConfig(vendor.config);
 
     const instance = await vendorManager.create(vendor);
 

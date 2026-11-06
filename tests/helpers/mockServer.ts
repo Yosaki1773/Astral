@@ -1107,7 +1107,10 @@ function handleAnthropicToolUseStreamResponse(
 /**
  * Handle GET /v1/models - returns a fixed list of mock models
  */
-function handleModelsList(_req: IncomingMessage, res: ServerResponse): void {
+function handleModelsList(req: IncomingMessage, res: ServerResponse): void {
+    // 捕获本次 GET 请求（含 headers），供 /_test/requests 断言（如 User-Agent 测试）
+    captureRequest(req, "", null);
+
     const response = {
         object: "list",
         data: [
@@ -1118,6 +1121,8 @@ function handleModelsList(_req: IncomingMessage, res: ServerResponse): void {
             { id: "mock-whisper-1", object: "model", created: 1234567890, owned_by: "mock" },
             { id: "mock-dall-e-3", object: "model", created: 1234567890, owned_by: "mock" },
         ],
+        // Include received headers for testing
+        _received_headers: receivedHeaders,
     };
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(response));

@@ -24,6 +24,9 @@
                 <a-descriptions-item v-if="vendor.config?.skip_tls_verify" label="TLS 验证">
                     <a-tag color="orange">已跳过</a-tag>
                 </a-descriptions-item>
+                <a-descriptions-item v-if="vendor.config?.user_agent_enabled" label="User-Agent">
+                    {{ vendor.config?.user_agent || '默认（claude-cli/2.1.161 (external, cli)）' }}
+                </a-descriptions-item>
                 <a-descriptions-item label="URLs">
                     <div v-for="item in getMergedUrls(vendor)" :key="item.key" class="url-item">
                         <strong>{{ item.key }}:</strong> {{ item.url }}
