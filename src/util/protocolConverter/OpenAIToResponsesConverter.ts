@@ -437,6 +437,8 @@ export class OpenAIToResponsesConverter extends BaseConverter {
                 // reset state
                 this.hasToolCalls = false;
                 this.isFirstChunk = true;
+                // OpenAI 客户端的终止标记：Responses 上游用 response.completed 收尾，不带 [DONE]
+                out.push({ data: "[DONE]" });
                 break;
             }
 
