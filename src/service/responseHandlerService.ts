@@ -32,6 +32,7 @@ import customError from "../customError";
 interface StreamRunResult {
     accumulator: AccumulatorBase;
     failedCode: string | null;
+    errorMessage: string | null;
 }
 
 
@@ -90,13 +91,19 @@ async function runSSELoop(
     const decoder = new TextDecoder();
     let buffer = "";
     let failedCode: string | null = null;
+    let errorMessage: string | null = null;
+    const markFailure = (code: FailedCode, message: string | null): void => {
+        if (failedCode !== null) return;
+        failedCode = code;
+        errorMessage = message;
+    };
 
     // 相邻 chunk 空闲超时：超时置 UPSTREAM_TIMEOUT 并取消上游 body
     const idleTimeoutMs = await configService.getNumber(ConfigKey.UPSTREAM_STREAM_IDLE_TIMEOUT_MS);
 
     // 客户端断开感知：直接订阅客户端信号，已断开则立即触发
     const unsubscribeClientAbort = abortTimeoutUtil.onSignalAbort(c.req.raw.signal, () => {
-        if (!failedCode) failedCode = FailedCode.CLIENT_DISCONNECTED;
+        markFailure(FailedCode.CLIENT_DISCONNECTED, "客户端断开连接，网关已中止上游请求");
         upstreamReader.cancel().catch(() => {});
     });
 
@@ -108,10 +115,8 @@ async function runSSELoop(
             if (!clientEvent.data) continue;
 
             accumulator.addEvent(clientEvent);
-            if (accumulator.isErrored() && failedCode === null) {
-                failedCode = accumulator.isParseFailed()
-                    ? FailedCode.SSE_PARSE_ERROR
-                    : FailedCode.UPSTREAM_ERROR;
+            if (accumulator.isErrored()) {
+                markFailure(accumulator.isParseFailed() ? FailedCode.SSE_PARSE_ERROR : FailedCode.UPSTREAM_ERROR, null);
             }
 
             await writeEventToClient(stream, clientEvent);
@@ -120,14 +125,7 @@ async function runSSELoop(
 
     try {
         while (true) {
-            const result = await abortTimeoutUtil.raceWithTimeout(
-                upstreamReader.read(),
-                idleTimeoutMs,
-                () => {
-                    if (!failedCode) failedCode = FailedCode.UPSTREAM_TIMEOUT;
-                    upstreamReader.cancel().catch(() => {});
-                },
-            );
+            const result = await abortTimeoutUtil.readChunk(upstreamReader, idleTimeoutMs);
             if (result.done) {
                 const finalChunk = decoder.decode();
                 if (finalChunk) {
@@ -137,7 +135,7 @@ async function runSSELoop(
 
                 // A non-empty remainder lacks the SSE event delimiter and is a truncated frame.
                 if (buffer.trim()) {
-                    failedCode = failedCode ?? FailedCode.SSE_PARSE_ERROR;
+                    markFailure(FailedCode.SSE_PARSE_ERROR, null);
                     break;
                 }
 
@@ -178,22 +176,17 @@ async function runSSELoop(
                 break;
             }
         }
-    } catch (e: any) {
-        // 统一的收尾：空闲超时是预期停顿，跳过日志；其余（客户端断开 / 上游读取错误 /
-        // 写客户端失败 / 循环体异常）记日志。失败码秉持「先到先得」：一旦记录就不再覆盖。
-        if (failedCode !== FailedCode.UPSTREAM_TIMEOUT) {
-            console.error(`${SSE_LOOP_LOG_PREFIX} Stream error:`, e);
-        }
-        // 未记录失败码时按错误类型区分：写客户端失败 → 客户端断开；其余 → 上游断开
-        if (!failedCode) {
-            failedCode = e instanceof customError.ClientWriteError
-                ? FailedCode.CLIENT_DISCONNECTED
-                : FailedCode.UPSTREAM_DISCONNECTED;
+    } catch (e) {
+        console.error(`${SSE_LOOP_LOG_PREFIX} Stream error:`, e);
+        if (abortTimeoutUtil.isTaggedError(e)) {
+            markFailure(e.failedCode, e.message);
+        } else {
+            markFailure(e instanceof customError.ClientWriteError ? FailedCode.CLIENT_DISCONNECTED : FailedCode.UNKNOWN, abortTimeoutUtil.describeError(e));
         }
     }
 
     unsubscribeClientAbort();
-    return { accumulator, failedCode };
+    return { accumulator, failedCode, errorMessage };
 }
 
 
@@ -208,7 +201,7 @@ function finalizeStreamResult(
     user: SgUser,
     state: StreamRunResult,
 ): void {
-    let { accumulator, failedCode } = state;
+    let { accumulator, failedCode, errorMessage } = state;
 
     runInBackgroundUtil.runInBackground(c, async () => {
         // 已完整接收即视为成功：即使随后连接断开，也可能只是客户端拿到完整结果后提前关闭
@@ -251,7 +244,9 @@ function finalizeStreamResult(
 
         // ② 上游返回错误 → 附带 error body（默认 null；仅当错误码与累加器判定一致时填充）
         let failedOptions: MarkFailedOptions | null = null;
-        if (failedCode === FailedCode.UPSTREAM_ERROR && accumulator.isErrored()) {
+        if (errorMessage !== null) {
+            failedOptions = { response_data: errorMessage };
+        } else if (failedCode === FailedCode.UPSTREAM_ERROR && accumulator.isErrored()) {
             const errorData = accumulator.getError();
             failedOptions = {
                 response_data: errorData === null ? null : JSON.stringify(errorData),
@@ -281,17 +276,17 @@ export async function handleNonStreamResponse(
     converter: BaseConverter | null = null,
 ): Promise<Response> {
     // 非流式 body 读取兜底：readTextWithTimeoutAndAbort 一次性处理「上游断开 / 超时 / 客户端断开」，
-    // 失败抛 BodyReadError（e.failedCode 即原因），异常时显式把 record 标 FAILED。
+    // 失败携带失败码及可读诊断，异常时显式把 record 标 FAILED。
     const nonStreamTimeoutMs = await configService.getNumber(ConfigKey.UPSTREAM_NON_STREAM_TIMEOUT_MS);
 
     let responseText: string;
     try {
         responseText = await abortTimeoutUtil.readTextWithTimeoutAndAbort(upstreamRes, nonStreamTimeoutMs, c.req.raw.signal);
     } catch (e) {
-        const failedCode = e instanceof abortTimeoutUtil.BodyReadError
+        const failedCode = abortTimeoutUtil.isTaggedError(e)
             ? e.failedCode
             : FailedCode.UPSTREAM_DISCONNECTED;
-        await recordService.markFailed(record.id, failedCode);
+        await recordService.markFailed(record.id, failedCode, { response_data: abortTimeoutUtil.describeError(e) });
         throw e;
     }
 

@@ -1,8 +1,12 @@
+import customError from "../../customError";
+import protocolConverterUtil from "./protocolConverterUtil";
 import { BaseConverter } from "./BaseConverter";
 import type {
     OpenAIRequest,
     OpenAIResponse,
     OpenAIMessage,
+    OpenAIContentPart,
+    OpenAIStreamError,
     OpenAITool,
     OpenAIChunk,
     ProtocolStreamEvent,
@@ -86,7 +90,14 @@ export class ResponsesToOpenAIConverter extends BaseConverter {
                 }
             };
 
+            // tool 消息之间不能插入 user 图片消息，待连续工具结果全部输出后再冲刷。
+            const pendingToolImages: OpenAIContentPart[] = [];
+            const flushToolImages = () => {
+                if (pendingToolImages.length > 0) messages.push({ role: "user", content: pendingToolImages.splice(0) });
+            };
+
             for (const item of req.input) {
+                if (!("type" in item && item.type === "function_call_output")) flushToolImages();
                 if ("type" in item && item.type === "function_call") {
                     // 收集 function_call
                     if (!pendingToolCalls) {
@@ -112,12 +123,13 @@ export class ResponsesToOpenAIConverter extends BaseConverter {
                 } else {
                     // 遇到其他类型，先 flush 之前收集的 tool_calls
                     flushToolCalls();
-                    this.convertInputItem(item, messages);
+                    this.convertInputItem(item, messages, pendingToolImages);
                 }
             }
 
             // flush 剩余的 tool_calls
             flushToolCalls();
+            flushToolImages();
         }
 
         const openaiReq: OpenAIRequest = {
@@ -180,6 +192,7 @@ export class ResponsesToOpenAIConverter extends BaseConverter {
     private convertInputItem(
         item: ResponsesInputItem,
         messages: OpenAIMessage[],
+        toolImages: OpenAIContentPart[],
     ): void {
         if ("type" in item && item.type === "function_call") {
             // function_call → assistant message with tool_calls
@@ -199,12 +212,23 @@ export class ResponsesToOpenAIConverter extends BaseConverter {
         }
 
         if ("type" in item && item.type === "function_call_output") {
-            // function_call_output → tool message
-            messages.push({
-                role: "tool",
-                tool_call_id: item.call_id,
-                content: item.output,
-            });
+            let content: string;
+            if (typeof item.output === "string") {
+                content = item.output;
+            } else {
+                const texts: string[] = [];
+                for (const part of item.output) {
+                    if (part.type === "input_text" || part.type === "output_text") {
+                        texts.push(part.text);
+                    } else if (part.type === "input_image") {
+                        toolImages.push(this.convertInputImage(part));
+                    } else if (part.type === "input_file") {
+                        throw new customError.AppError("Responses input_file cannot be converted to OpenAI", 400);
+                    }
+                }
+                content = texts.join("\n");
+            }
+            messages.push({ role: "tool", tool_call_id: item.call_id, content });
             return;
         }
 
@@ -231,45 +255,36 @@ export class ResponsesToOpenAIConverter extends BaseConverter {
             }
 
             if (Array.isArray(content)) {
-                // 检查是否包含图片
-                const hasImage = content.some((p) => p.type === "input_image");
-                const texts: string[] = [];
-                const imageParts: Array<{ type: "image_url"; image_url: { url: string } }> = [];
-
+                const parts: OpenAIContentPart[] = [];
+                let hasImage = false;
                 for (const part of content) {
                     if (part.type === "input_text" || part.type === "output_text") {
-                        texts.push(part.text);
+                        parts.push({ type: "text", text: part.text });
                     } else if (part.type === "input_image") {
-                        const url = (part as any).image_url || (part as any).url || "";
-                        imageParts.push({
-                            type: "image_url",
-                            image_url: { url },
-                        });
+                        hasImage = true;
+                        parts.push(this.convertInputImage(part));
+                    } else if (part.type === "input_file") {
+                        throw new customError.AppError("Responses input_file cannot be converted to OpenAI", 400);
                     }
                 }
-
-                if (imageParts.length > 0) {
-                    // 多模态内容
-                    const multiContent: any[] = [];
-                    if (texts.length > 0) {
-                        multiContent.push({ type: "text", text: texts.join("\n") });
-                    }
-                    multiContent.push(...imageParts);
-                    messages.push({ role: role as "user" | "assistant", content: multiContent as any });
-                } else if (texts.length > 0) {
-                    messages.push({ role: role as "user" | "assistant", content: texts.join("\n") });
+                if (hasImage) {
+                    messages.push({ role: role as "user" | "assistant", content: parts });
+                } else if (parts.length > 0) {
+                    messages.push({ role: role as "user" | "assistant", content: parts.map(part => (part as { text: string }).text).join("\n") });
                 }
             }
         }
     }
 
     private extractText(content: string | ResponsesContentPart[]): string {
-        if (typeof content === "string") return content;
-        if (!Array.isArray(content)) return "";
-        return content
-            .filter((p: any) => p.type === "input_text" || p.type === "output_text")
-            .map((p: any) => p.text)
-            .join("\n");
+        return protocolConverterUtil.extractResponsesText(content, "OpenAI");
+    }
+
+
+    private convertInputImage(part: { image_url?: string; url?: string; file_id?: string }): OpenAIContentPart {
+        const url = part.image_url || part.url;
+        if (!url) throw new customError.AppError("Responses input_image with file_id cannot be converted to OpenAI", 400);
+        return { type: "image_url", image_url: { url } };
     }
 
     // ─── 非流式响应转换 ───
@@ -341,6 +356,11 @@ export class ResponsesToOpenAIConverter extends BaseConverter {
     protected doConvertStreamEvent(data: Record<string, unknown>, rawDataStr: string): ProtocolStreamEvent[] {
         const out: ProtocolStreamEvent[] = [];
         const chunk = data as unknown as OpenAIChunk;
+        const streamError = data as unknown as OpenAIStreamError;
+        const error = streamError.error ?? (streamError.type === "error" ? streamError : null);
+        if (error) {
+            return [{ event: "error", data: JSON.stringify({ type: "error", code: error.code ?? null, message: error.message ?? "Upstream error" }) }];
+        }
 
         // 首帧：发 response.created + response.in_progress
         if (!this.createdEmitted) {

@@ -1,3 +1,5 @@
+import customError from "../../customError";
+import protocolConverterUtil from "./protocolConverterUtil";
 import { BaseConverter } from "./BaseConverter";
 import type {
     AnthropicRequest,
@@ -33,21 +35,16 @@ export class OpenAIToAnthropicConverter extends BaseConverter {
 
         for (const msg of clientReq.messages) {
             if (msg.role === "system") {
-                systemPrompt = (systemPrompt ? systemPrompt + "\n\n" : "") + (msg.content || "");
+                systemPrompt = (systemPrompt ? systemPrompt + "\n\n" : "") + this.contentToText(msg.content);
                 continue;
             }
 
             if (msg.role === "tool") {
-                messages.push({
-                    role: "user",
-                    content: [
-                        {
-                            type: "tool_result",
-                            tool_use_id: msg.tool_call_id || "",
-                            content: msg.content || "",
-                        },
-                    ],
-                });
+                protocolConverterUtil.appendAnthropicMessage(messages, "user", [{
+                    type: "tool_result",
+                    tool_use_id: msg.tool_call_id || "",
+                    content: this.contentToText(msg.content),
+                }]);
                 continue;
             }
 
@@ -59,8 +56,9 @@ export class OpenAIToAnthropicConverter extends BaseConverter {
                         contentBlocks.push({ type: "thinking", thinking: msg.reasoning_content });
                     }
 
-                    if (msg.content) {
-                        contentBlocks.push({ type: "text", text: msg.content });
+                    const textContent = this.contentToText(msg.content);
+                    if (textContent) {
+                        contentBlocks.push({ type: "text", text: textContent });
                     }
 
                     if (msg.tool_calls) {
@@ -86,10 +84,7 @@ export class OpenAIToAnthropicConverter extends BaseConverter {
             }
 
             if (msg.role === "user" || msg.role === "assistant") {
-                messages.push({
-                    role: msg.role,
-                    content: msg.content || "",
-                });
+                protocolConverterUtil.appendAnthropicMessage(messages, msg.role, this.convertMessageContent(msg.content));
             }
         }
 
@@ -152,6 +147,27 @@ export class OpenAIToAnthropicConverter extends BaseConverter {
         }
 
         return anthropicReq;
+    }
+
+
+    private convertMessageContent(content: OpenAIMessage["content"]): string | AnthropicContentBlock[] {
+        if (!Array.isArray(content)) return content || "";
+        return content.map<AnthropicContentBlock>(part => {
+            if (part.type === "text") return { type: "text", text: part.text };
+            if (part.type === "image_url") {
+                const url = typeof part.image_url === "string" ? part.image_url : part.image_url?.url;
+                if (!url) throw new customError.AppError("image_url.url is required for image protocol conversion", 400);
+                return { type: "image", source: protocolConverterUtil.anthropicImageSourceFromUrl(url) };
+            }
+            throw new customError.AppError(`Unsupported OpenAI content part type for protocol conversion: ${(part as { type?: string }).type ?? "unknown"}`, 400);
+        });
+    }
+
+
+    private contentToText(content: OpenAIMessage["content"]): string {
+        if (typeof content === "string") return content;
+        if (!Array.isArray(content)) return "";
+        return content.filter(part => part.type === "text").map(part => (part as { text: string }).text).join("\n");
     }
 
 

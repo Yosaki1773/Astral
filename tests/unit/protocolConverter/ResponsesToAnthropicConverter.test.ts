@@ -456,8 +456,8 @@ describe("ResponsesToAnthropicConverter - convertRequest", () => {
 
         const result = converter.convertRequest(req);
 
-        // 验证消息结构：user + assistant(3 tool_use) + user(3 tool_result) + user = 4
-        expect(result.messages).toHaveLength(4);
+        // 相邻 user 内容合并：user + assistant(3 tool_use) + user(3 tool_result + text)。
+        expect(result.messages).toHaveLength(3);
 
         // 验证 assistant 消息包含所有 3 个 tool_use
         const assistantMsg = result.messages[1];
@@ -472,7 +472,8 @@ describe("ResponsesToAnthropicConverter - convertRequest", () => {
         const toolResultMsg = result.messages[2];
         expect(toolResultMsg.role).toBe("user");
         expect(Array.isArray(toolResultMsg.content)).toBe(true);
-        expect((toolResultMsg.content as any[]).length).toBe(3);
+        expect((toolResultMsg.content as any[]).length).toBe(4);
+        expect((toolResultMsg.content as any[])[3]).toEqual({ type: "text", text: "Done" });
         expect((toolResultMsg.content as any[])[0].type).toBe("tool_result");
         expect((toolResultMsg.content as any[])[1].type).toBe("tool_result");
         expect((toolResultMsg.content as any[])[2].type).toBe("tool_result");

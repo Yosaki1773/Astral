@@ -1,3 +1,4 @@
+import protocolConverterUtil from "./protocolConverterUtil";
 import { BaseConverter } from "./BaseConverter";
 import type {
     AnthropicRequest,
@@ -11,6 +12,9 @@ import type {
     ResponsesNonStreamResponse,
     ResponsesOutputItem,
     ResponsesInputItem,
+    ResponsesContentPart,
+    ResponsesEventError,
+    ResponsesEventResponseFailed,
 } from "./responsesTypes";
 import {
     buildThinkingConfigFromAnthropic,
@@ -61,54 +65,23 @@ export class AnthropicToResponsesConverter extends BaseConverter {
                         content: [{ type: "input_text", text: msg.content }],
                     });
                 } else if (Array.isArray(msg.content)) {
-                    // 先收集普通内容
-                    const textParts: string[] = [];
-                    const imageParts: ResponsesInputItem[] = [];
-
+                    const parts: ResponsesContentPart[] = [];
+                    const flushParts = () => {
+                        if (parts.length > 0) {
+                            input.push({ type: "message", role: "user", content: parts.splice(0) });
+                        }
+                    };
                     for (const block of msg.content) {
                         if (block.type === "text") {
-                            textParts.push(block.text || "");
+                            parts.push({ type: "input_text", text: block.text || "" });
                         } else if (block.type === "image") {
-                            const src = block.source;
-                            if (src?.type === "base64" && src.data) {
-                                imageParts.push({
-                                    type: "message",
-                                    role: "user",
-                                    content: [{
-                                        type: "input_image",
-                                        image_url: `data:${src.media_type || "image/png"};base64,${src.data}`,
-                                    }],
-                                });
-                            } else if (src?.url) {
-                                imageParts.push({
-                                    type: "message",
-                                    role: "user",
-                                    content: [{ type: "input_image", image_url: src.url }],
-                                });
-                            }
+                            parts.push({ type: "input_image", image_url: protocolConverterUtil.anthropicImageSourceToUrl(block.source) });
                         } else if (block.type === "tool_result") {
-                            // tool_result → function_call_output
-                            const content = typeof block.content === "string"
-                                ? block.content
-                                : JSON.stringify(block.content);
-                            input.push({
-                                type: "function_call_output",
-                                call_id: block.tool_use_id || "",
-                                output: content,
-                            });
+                            flushParts();
+                            input.push({ type: "function_call_output", call_id: block.tool_use_id || "", output: this.convertToolResultOutput(block.content) });
                         }
                     }
-
-                    if (textParts.length > 0) {
-                        input.push({
-                            type: "message",
-                            role: "user",
-                            content: [{ type: "input_text", text: textParts.join("\n") }],
-                        });
-                    }
-                    for (const img of imageParts) {
-                        input.push(img);
-                    }
+                    flushParts();
                 }
             } else if (msg.role === "assistant") {
                 if (typeof msg.content === "string") {
@@ -197,6 +170,20 @@ export class AnthropicToResponsesConverter extends BaseConverter {
         return responsesReq;
     }
 
+    private convertToolResultOutput(content: string | AnthropicContentBlock[] | undefined): string | ResponsesContentPart[] {
+        if (!content || typeof content === "string") return content || "";
+        const parts: ResponsesContentPart[] = [];
+        for (const block of content) {
+            if (block.type === "text" && block.text) {
+                parts.push({ type: "input_text", text: block.text });
+            } else if (block.type === "image") {
+                parts.push({ type: "input_image", image_url: protocolConverterUtil.anthropicImageSourceToUrl(block.source) });
+            }
+        }
+        return parts.length > 0 ? parts : "";
+    }
+
+
     // ─── 非流式响应转换 ───
 
     public convertResponse(upstreamRes: ResponsesNonStreamResponse, requestId?: string): AnthropicResponse {
@@ -261,6 +248,12 @@ export class AnthropicToResponsesConverter extends BaseConverter {
         const out: ProtocolStreamEvent[] = [];
 
         switch (eventType) {
+            case "error":
+            case "response.failed": {
+                const event = data as unknown as ResponsesEventError | ResponsesEventResponseFailed;
+                const error = event.type === "response.failed" ? event.response?.error : event;
+                return [{ event: "error", data: JSON.stringify({ type: "error", error: { type: error?.code ?? "api_error", message: error?.message ?? "Upstream error" } }) }];
+            }
             case "response.created": {
                 const resp = (data as any).response;
                 this.responseId = resp?.id || this.responseId;

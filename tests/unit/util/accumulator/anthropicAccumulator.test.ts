@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import anthropicAccumulator from "../../../../src/util/accumulator/anthropicAccumulator";
+import sseEventUtil from "../../../../src/util/protocol/sseEventUtil";
 
 function requireFixture(fileName: string): string {
     const logFile = join(__dirname, "..", "..", "..", "resource", "stream_logs", fileName);
@@ -15,32 +16,19 @@ function requireFixture(fileName: string): string {
 
 function parseAnthropicStream(content: string) {
     const accumulator = new anthropicAccumulator.AnthropicAccumulator();
-    const events = content.split("\n\n").filter((event) => event.trim());
-
+    const { events, remainingBuffer } = sseEventUtil.splitEvents(content);
+    expect(remainingBuffer.trim()).toBe("");
     for (const event of events) {
-        const lines = event.split("\n");
-        let data = "";
-        let eventType = "";
-
-        for (const line of lines) {
-            if (line.startsWith("data:")) {
-                data = line.slice(5).trim();
-            } else if (line.startsWith("event:")) {
-                eventType = line.slice(6).trim();
-            }
-        }
-
-        if (!data) continue;
-
-        accumulator.addEvent({ data, event: eventType });
+        if (event.data) accumulator.addEvent(event);
     }
 
     return accumulator.getResponse();
 }
 
 describe("AnthropicAccumulator fixtures", () => {
-    it("parses anthropic non-tool stream fixture", () => {
-        const response = parseAnthropicStream(requireFixture("anthropic-stream.log"));
+    it.each(["\n", "\r\n", "\r"])("parses anthropic non-tool stream fixture with %j line endings", (lineEnding) => {
+        const fixture = requireFixture("anthropic-stream.log").replace(/\r\n|\r|\n/g, lineEnding);
+        const response = parseAnthropicStream(fixture);
 
         expect(response.model).toBe("glm-4.7");
         expect(response.choices).toHaveLength(1);
@@ -52,8 +40,9 @@ describe("AnthropicAccumulator fixtures", () => {
         expect(response.usage?.completion_tokens).toBe(223);
     });
 
-    it("parses anthropic tool-use stream fixture", () => {
-        const response = parseAnthropicStream(requireFixture("anthropic-tool-use-stream.log"));
+    it.each(["\n", "\r\n", "\r"])("parses anthropic tool-use stream fixture with %j line endings", (lineEnding) => {
+        const fixture = requireFixture("anthropic-tool-use-stream.log").replace(/\r\n|\r|\n/g, lineEnding);
+        const response = parseAnthropicStream(fixture);
         const toolUseList = response.choices[0].message.tool_use ?? [];
         const actualToolUse = toolUseList.find((item) => item?.name === "get_weather");
 

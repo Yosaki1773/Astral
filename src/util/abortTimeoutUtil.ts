@@ -52,10 +52,42 @@ async function readTextWithSignal(res: Response, signal: AbortSignal): Promise<s
 }
 
 
-/** 读取响应体失败时抛出的错误：携带失败原因对应的失败码，供调用方记账与处理 */
-class BodyReadError extends Error {
-    constructor(public readonly failedCode: FailedCode) {
-        super(`upstream response body read failed: ${failedCode}`);
+class TaggedError extends Error {
+    constructor(public readonly failedCode: FailedCode, message: string, cause?: unknown) {
+        super(message, cause === undefined ? undefined : { cause });
+        this.name = "TaggedError";
+    }
+}
+
+
+function isTaggedError(error: unknown): error is TaggedError {
+    return error instanceof TaggedError
+        || (error instanceof Error && error.name === "TaggedError" && typeof (error as TaggedError).failedCode === "string");
+}
+
+
+function describeError(error: unknown): string {
+    if (isTaggedError(error)) return error.message;
+    if (!(error instanceof Error)) return String(error);
+    const cause = error.cause;
+    return `${error.name}: ${error.message}${cause ? `; cause: ${cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause)}` : ""}`;
+}
+
+
+function classifyUpstreamFetchError(error: unknown): TaggedError {
+    if (isTaggedError(error)) return error;
+    const networkError = error instanceof Error && (
+        (error instanceof TypeError && error.message === "fetch failed")
+        || (error.name === "Error" && error.message === "Network connection lost.")
+    );
+    return new TaggedError(networkError ? FailedCode.UPSTREAM_UNREACHABLE : FailedCode.UNKNOWN, describeError(error), error);
+}
+
+
+/** 保留响应体读取错误类型，同时携带可读诊断与底层原因。 */
+class BodyReadError extends TaggedError {
+    constructor(failedCode: FailedCode, message = `upstream response body read failed: ${failedCode}`, cause?: unknown) {
+        super(failedCode, message, cause);
     }
 }
 
@@ -78,7 +110,7 @@ async function readTextWithTimeoutAndAbort(
     try {
         return await readTextWithSignal(res, abortCtrl.signal);
     } catch (e) {
-        throw new BodyReadError(abortCtrl.failedCode() ?? FailedCode.UPSTREAM_DISCONNECTED);
+        throw abortCtrl.getTaggedError() ?? new BodyReadError(FailedCode.UPSTREAM_DISCONNECTED, "上游连接中断（响应体读取失败）", e);
     } finally {
         abortCtrl.dispose();
     }
@@ -109,25 +141,32 @@ class TimeoutAbortController {
     readonly signal: AbortSignal;
 
     private readonly controller = new AbortController();
-    private readonly clientAbortSignal: AbortSignal | undefined;
-    private timedOut = false;
+    private taggedError: TaggedError | null = null;
     private readonly timer: ReturnType<typeof setTimeout> | undefined;
     private readonly unsubscribeClient: () => void;
 
     constructor(timeoutMs: number, clientAbortSignal?: AbortSignal) {
         this.signal = this.controller.signal;
-        this.clientAbortSignal = clientAbortSignal;
         if (timeoutMs > 0) {
-            this.timer = setTimeout(() => { this.timedOut = true; this.controller.abort(); }, timeoutMs);
+            this.timer = setTimeout(() => this.abortWith(FailedCode.UPSTREAM_TIMEOUT, `上游响应超时（等待 ${timeoutMs}ms 无响应）`), timeoutMs);
         }
-        this.unsubscribeClient = onSignalAbort(clientAbortSignal, () => this.controller.abort());
+        this.unsubscribeClient = onSignalAbort(clientAbortSignal, () => this.abortWith(FailedCode.CLIENT_DISCONNECTED, "客户端断开连接，网关已中止上游请求"));
     }
 
-    /** 中止原因对应的失败码：客户端断开 / 超时；未中止返回 null（如普通网络错误） */
+    private abortWith(code: FailedCode, message: string): void {
+        if (this.taggedError) return;
+        this.taggedError = new TaggedError(code, message);
+        this.controller.abort(this.taggedError);
+    }
+
+    /** 中止原因对应的失败码；未中止返回 null（如普通网络错误）。 */
     failedCode(): FailedCode | null {
-        if (this.clientAbortSignal?.aborted) return FailedCode.CLIENT_DISCONNECTED;
-        if (this.timedOut) return FailedCode.UPSTREAM_TIMEOUT;
-        return null;
+        return this.taggedError?.failedCode ?? null;
+    }
+
+    /** fetch 在 Worker 边界可能丢失错误属性；归因优先读取本地控制器，不依赖跨边界序列化。 */
+    getTaggedError(): TaggedError | null {
+        return this.taggedError;
     }
 
     /** 清理定时器与客户端断开监听（在 finally 中调用） */
@@ -138,8 +177,27 @@ class TimeoutAbortController {
 }
 
 
+async function readChunk(reader: ReadableStreamDefaultReader<Uint8Array>, timeoutMs: number): Promise<ReadableStreamReadResult<Uint8Array>> {
+    let timedOut = false;
+    try {
+        return await raceWithTimeout(reader.read(), timeoutMs, () => { timedOut = true; });
+    } catch (error) {
+        if (timedOut) {
+            reader.cancel().catch(() => {});
+            throw new TaggedError(FailedCode.UPSTREAM_TIMEOUT, `上游响应超时（流式输出空闲超过 ${timeoutMs}ms）`);
+        }
+        throw new TaggedError(FailedCode.UPSTREAM_DISCONNECTED, "上游连接中断（流式读取失败）", error);
+    }
+}
+
+
 export default {
     TimeoutAbortController,
+    TaggedError,
+    isTaggedError,
+    classifyUpstreamFetchError,
+    describeError,
+    readChunk,
     BodyReadError,
     onSignalAbort,
     raceWithTimeout,

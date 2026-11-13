@@ -56,9 +56,13 @@ export interface AnthropicRequest {
     metadata?: Record<string, unknown>;
 }
 
+export type OpenAIContentPart =
+    | { type: "text"; text: string }
+    | { type: "image_url"; image_url: { url: string; detail?: string } };
+
 export interface OpenAIMessage {
     role: "system" | "user" | "assistant" | "tool";
-    content?: string | null;
+    content?: string | OpenAIContentPart[] | null;
     reasoning_content?: string | null;
     name?: string;
     tool_calls?: Array<{
@@ -159,6 +163,13 @@ export interface ProtocolStreamEvent {
     data: string;
     event?: string;
     id?: string;
+}
+
+export interface OpenAIStreamError {
+    type?: "error";
+    error?: { code?: string | null; message?: string; type?: string } | null;
+    code?: string | null;
+    message?: string;
 }
 
 export interface OpenAIChunk {

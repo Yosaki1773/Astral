@@ -45,15 +45,10 @@ function stringOrNull(value: unknown): string | null {
  */
 function detectResponses(json: Record<string, any>): UpstreamBodyFailure | null {
     if (json.status === "failed") {
-        return isRecord(json.error) && hasStringField(json.error, "code", "message")
-            ? { code: stringOrNull(json.error.code) }
-            : null;
+        return { code: isRecord(json.error) ? stringOrNull(json.error.code) : null };
     }
-    if (json.type === "error" && (
-        (isRecord(json.error) && hasStringField(json.error, "code", "message"))
-        || hasStringField(json, "code", "message")
-    )) {
-        return { code: stringOrNull(json.code) ?? stringOrNull(json.error?.code) };
+    if (json.type === "error") {
+        return { code: stringOrNull(json.code) ?? (isRecord(json.error) ? stringOrNull(json.error.code) : null) };
     }
     return null;
 }
@@ -78,8 +73,8 @@ function detectOpenAI(json: Record<string, any>): UpstreamBodyFailure | null {
  * 错误类别在 error.type 里（overloaded_error / rate_limit_error 等），因此取 error.type 作为码。
  */
 function detectAnthropic(json: Record<string, any>): UpstreamBodyFailure | null {
-    if (json.type === "error" && isRecord(json.error) && typeof json.error.type === "string" && json.error.type.length > 0) {
-        return { code: stringOrNull(json.error.type) ?? stringOrNull(json.error.code) };
+    if (json.type === "error") {
+        return { code: isRecord(json.error) ? stringOrNull(json.error.type) ?? stringOrNull(json.error.code) : null };
     }
     return null;
 }

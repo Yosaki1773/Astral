@@ -5,6 +5,7 @@ import requestHelper from "../../helpers/requestHelper";
 import mockHelper from "../../helpers/mockHelper";
 import vendorFixtures from "../../fixtures/vendorFixtures";
 import userFixtures from "../../fixtures/userFixtures";
+import config from "../../config";
 
 const adminToken = userFixtures.ADMIN_TOKEN;
 const ROOT_TOKEN = "test-root-token-for-suite";
@@ -81,7 +82,7 @@ function accessControlRule(modelId: number, userId: number) {
     };
 }
 
-describe("Rule API", () => {
+describe("Rule API", { timeout: config.TEST_OPTIONS.timeout }, () => {
     // 每次用例前清库（含 rule 表）并重建管理员，避免全局 const 规则等跨用例污染；同时经
     // /test/cache/clear 清除服务进程内的 ruleService 规则缓存。
     beforeEach(async () => {
@@ -326,7 +327,11 @@ describe("Rule API", () => {
         expect(anthropicLimited.status).toBe(429);
         expect(anthropicLimited.body.type).toBe("error");
         expect(anthropicLimited.body.error.type).toBe("rate_limit_error");
-        expect(anthropicLimited.headers.get("retry-after")).toBe("60");
+        // 令牌桶在首个请求处理期间持续补充，等待时间不应固定为 60 秒。
+        const retryAfter = Number(anthropicLimited.headers.get("retry-after"));
+        expect(Number.isInteger(retryAfter)).toBe(true);
+        expect(retryAfter).toBeGreaterThanOrEqual(1);
+        expect(retryAfter).toBeLessThanOrEqual(60);
     });
 
     it("fails over to the next upstream when vendor-level rate limit hits", async () => {
@@ -418,7 +423,10 @@ describe("Rule API", () => {
             user.token,
         );
         expect(second.status).toBe(429);
-        expect(second.headers.get("retry-after")).toBe("60");
+        const retryAfter = Number(second.headers.get("retry-after"));
+        expect(Number.isInteger(retryAfter)).toBe(true);
+        expect(retryAfter).toBeGreaterThanOrEqual(1);
+        expect(retryAfter).toBeLessThanOrEqual(60);
         expect(second.body.error.type).toBe("rate_limit_error");
 
         const records = await requestHelper.getFinalizedRecords(adminToken, 5);

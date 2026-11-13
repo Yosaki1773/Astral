@@ -287,21 +287,23 @@ async function sendRequestToUpstream(
             // dispatcher 是 undici (Node.js) 特有选项，不在 Cloudflare Workers 的 RequestInit 类型定义中
             ...(dispatcher ? { dispatcher: dispatcher } as any : {}),
         });
-    } catch (e: any) {
+    } catch (e) {
         console.error("Upstream fetch failed:", e);
-        await recordService.markFailed(recordId, clientAbortCtrl.failedCode(), {
+        const error = clientAbortCtrl.getTaggedError() ?? abortTimeoutUtil.classifyUpstreamFetchError(e);
+        const errorText = abortTimeoutUtil.describeError(error);
+        await recordService.markFailed(recordId, error.failedCode, {
             stage: RequestActivityStage.UPSTREAM_ATTEMPT,
             message: "上游请求失败",
             level: ActivityLevel.ERROR,
-            response_data: String(e),
+            response_data: errorText,
             detail: {
                 vendor_id: vendor.id,
                 vendor_name: vendor.name,
                 url,
-                error: e instanceof Error ? e.message : String(e),
+                error: errorText,
             },
         });
-        throw e;
+        throw error;
     } finally {
         clientAbortCtrl.dispose();
     }
@@ -511,12 +513,14 @@ async function sendRequest(
 
                 return response;
             } catch (e: any) {
-                if (c.req.raw.signal.aborted || e instanceof customError.AppError) {
+                if (c.req.raw.signal.aborted || e instanceof customError.AppError
+                    || (abortTimeoutUtil.isTaggedError(e) && e.failedCode === FailedCode.UNKNOWN)) {
                     throw e;
                 }
 
                 // 唯一的失败处理点：HTTP 错误与网络异常在这里汇合
                 const httpFailure = e instanceof UpstreamResponseError;
+                lastFailureCode = httpFailure ? null : (abortTimeoutUtil.isTaggedError(e) ? e.failedCode : FailedCode.UNKNOWN);
 
                 // 全局冷却：仅上游自身故障才标记（5xx、402 余额不足、网络不可达），
                 // 4xx 请求侧错误不惩罚上游，避免健康上游被无辜跳过（本请求的循环防护由 routingContext 承担）

@@ -1,3 +1,5 @@
+import customError from "../../customError";
+import protocolConverterUtil from "./protocolConverterUtil";
 import { BaseConverter } from "./BaseConverter";
 import type {
     AnthropicRequest,
@@ -78,7 +80,7 @@ export class ResponsesToAnthropicConverter extends BaseConverter {
 
             const flushToolResults = () => {
                 if (pendingToolResults.length > 0) {
-                    messages.push({ role: "user", content: pendingToolResults });
+                    protocolConverterUtil.appendAnthropicMessage(messages, "user", pendingToolResults);
                     pendingToolResults = [];
                 }
             };
@@ -97,7 +99,7 @@ export class ResponsesToAnthropicConverter extends BaseConverter {
                     pendingToolResults.push({
                         type: "tool_result",
                         tool_use_id: item.call_id,
-                        content: item.output,
+                        content: this.convertFunctionCallOutput(item.output),
                     });
                 } else {
                     // 遇到其他类型，先 flush 之前收集的内容
@@ -191,7 +193,7 @@ export class ResponsesToAnthropicConverter extends BaseConverter {
             const toolResult: AnthropicContentBlock = {
                 type: "tool_result",
                 tool_use_id: item.call_id,
-                content: item.output,
+                content: this.convertFunctionCallOutput(item.output),
             };
             messages.push({ role: "user", content: [toolResult] });
             return;
@@ -231,7 +233,7 @@ export class ResponsesToAnthropicConverter extends BaseConverter {
             }
 
             if (typeof content === "string") {
-                messages.push({ role: role as "user" | "assistant", content });
+                protocolConverterUtil.appendAnthropicMessage(messages, role as "user" | "assistant", content);
                 return;
             }
 
@@ -241,37 +243,43 @@ export class ResponsesToAnthropicConverter extends BaseConverter {
                     if (part.type === "input_text" || part.type === "output_text") {
                         blocks.push({ type: "text", text: part.text });
                     } else if (part.type === "input_image") {
-                        const url = part.image_url || (part as any).url || "";
-                        if (url.startsWith("data:")) {
-                            const match = url.match(/^data:([^;]+);base64,(.+)$/);
-                            if (match) {
-                                blocks.push({
-                                    type: "image",
-                                    source: { type: "base64", media_type: match[1], data: match[2] },
-                                });
-                            }
-                        } else {
-                            blocks.push({
-                                type: "image",
-                                source: { type: "url", url },
-                            });
-                        }
+                        blocks.push(this.convertInputImage(part));
+                    } else if (part.type === "input_file") {
+                        throw new customError.AppError("Responses input_file cannot be converted to Anthropic", 400);
                     }
                 }
                 if (blocks.length > 0) {
-                    messages.push({ role: role as "user" | "assistant", content: blocks });
+                    protocolConverterUtil.appendAnthropicMessage(messages, role as "user" | "assistant", blocks);
                 }
             }
         }
     }
 
     private extractText(content: string | ResponsesContentPart[]): string {
-        if (typeof content === "string") return content;
-        if (!Array.isArray(content)) return "";
-        return content
-            .filter((p: any) => p.type === "input_text" || p.type === "output_text")
-            .map((p: any) => p.text)
-            .join("\n");
+        return protocolConverterUtil.extractResponsesText(content, "Anthropic");
+    }
+
+
+    private convertFunctionCallOutput(output: string | ResponsesContentPart[]): string | AnthropicContentBlock[] {
+        if (typeof output === "string") return output;
+        const blocks: AnthropicContentBlock[] = [];
+        for (const part of output) {
+            if (part.type === "input_text" || part.type === "output_text") {
+                blocks.push({ type: "text", text: part.text });
+            } else if (part.type === "input_image") {
+                blocks.push(this.convertInputImage(part));
+            } else if (part.type === "input_file") {
+                throw new customError.AppError("Responses input_file cannot be converted to Anthropic", 400);
+            }
+        }
+        return blocks.length > 0 ? blocks : "";
+    }
+
+
+    private convertInputImage(part: { image_url?: string; url?: string; file_id?: string }): AnthropicContentBlock {
+        const url = part.image_url || part.url;
+        if (!url) throw new customError.AppError("Responses input_image with file_id cannot be converted to Anthropic", 400);
+        return { type: "image", source: protocolConverterUtil.anthropicImageSourceFromUrl(url) };
     }
 
     private safeParseArgs(args: string): Record<string, unknown> {

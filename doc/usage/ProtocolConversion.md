@@ -113,6 +113,14 @@ for chunk in response:
 - **多模态 (Vision / Image)**: 支持将 OpenAI 格式的图片输入（Base64 / URL）转译为 Anthropic 支持的图像块格式，反之亦然。
 - **工具调用 (Function Calling / Tool Use)**: 支持将 OpenAI 规范的 `tools` 和 `tool_choice` 转译为 Anthropic 的 `tools` 规范。能够正确解析模型返回的 `tool_calls`，并支持客户端将 `tool` 角色的结果回传。
 
+## 多模态转换的边界
+
+- OpenAI Chat Completions、Anthropic 和 Responses 之间支持普通图片输入；使用 base64 data URL 或远程图片 URL，保留普通消息中的文本／图片顺序。
+- Anthropic `tool_result` 与 Responses `function_call_output` 的图片内容可互相转换。转向 OpenAI Chat Completions 时，工具结果文本保留在 `tool` 消息中，图片移到连续工具结果之后的 `user` 消息；这不是完全无损的工具结果结构映射。
+- Responses 的 `input_file`、仅带 `file_id` 的图片，以及无有效 source 的 Anthropic 图片，跨协议转换时返回 400，不会静默丢弃或发送空图片地址。同协议透传不受此转换限制影响。
+- Responses 上游必须显式配置对应 URL；OpenAI URL 能派生出一个 `/responses` 路径，不代表供应商实际支持该协议。
+- 上游的跨协议错误事件会转为客户端可识别的错误事件，并将请求记录为失败。已经开始发送的 SSE 流不会因此自动重试其他上游。
+
 ## 注意事项
 
-虽然网关尽最大努力保证协议转换的无缝兼容，但受限于两家 API 规范的底层设计差异，可能会有极少数边界情况的差异（例如某些特定供应商的实验性参数不兼容）。对于 99% 以上的标准对话、流式输出、图片识别和工具调用，自动转换都是完全稳定且可靠的。
+协议之间仍存在不可无损表达的输入类型及参数；自动转换不等于所有供应商扩展能力都可互通。无法转换的上述内容会明确报错，调用方应使用对应的原生上游协议或调整输入。

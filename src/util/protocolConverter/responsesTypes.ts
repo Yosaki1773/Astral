@@ -50,7 +50,7 @@ export interface ResponsesFunctionCallItem {
 export interface ResponsesFunctionCallOutputItem {
     type: "function_call_output";
     call_id: string;
-    output: string;
+    output: string | ResponsesContentPart[];
 }
 
 export interface ResponsesReasoningItem {
@@ -63,8 +63,8 @@ export interface ResponsesReasoningItem {
 export type ResponsesContentPart =
     | { type: "input_text"; text: string }
     | { type: "output_text"; text: string }
-    | { type: "input_image"; image_url?: string; url?: string; detail?: string }
-    | { type: "input_file"; file_data?: string; filename?: string };
+    | { type: "input_image"; image_url?: string; url?: string; file_id?: string; detail?: string }
+    | { type: "input_file"; file_id?: string; file_data?: string; filename?: string };
 
 export interface ResponsesTool {
     type: "function";
@@ -87,6 +87,7 @@ export interface ResponsesNonStreamResponse {
     object: "response";
     created_at: number;
     status: "completed" | "failed" | "in_progress";
+    error?: { code?: string; message?: string } | null;
     model: string;
     output: ResponsesOutputItem[];
     usage?: {
@@ -158,7 +159,20 @@ export type ResponsesStreamEvent =
     | ResponsesEventReasoningSummaryTextDone
     | ResponsesEventReasoningSummaryPartDone
     | ResponsesEventOutputItemDone
-    | ResponsesEventResponseCompleted;
+    | ResponsesEventResponseCompleted
+    | ResponsesEventError
+    | ResponsesEventResponseFailed;
+
+export interface ResponsesEventError {
+    type: "error";
+    code?: string | null;
+    message?: string;
+}
+
+export interface ResponsesEventResponseFailed {
+    type: "response.failed";
+    response: ResponsesNonStreamResponse;
+}
 
 interface ResponsesEventBase {
     type: string;

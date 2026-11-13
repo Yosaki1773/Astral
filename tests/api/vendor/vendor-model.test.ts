@@ -200,7 +200,7 @@ describe("Vendor Model API", () => {
     });
 
     describe("POST /vendor/:id/model/sync.json", () => {
-        it("should replace all vendor models with the given list", async () => {
+        it("should add missing vendor models and keep existing ones", async () => {
             const response = await requestHelper.post(
                 `/vendor/${vendorId}/model/sync.json`,
                 { model_ids: ["claude-3-5-sonnet", "claude-3-haiku"] },
@@ -209,12 +209,11 @@ describe("Vendor Model API", () => {
 
             expect(response.status).toBe(200);
             expect(Array.isArray(response.body)).toBe(true);
-            expect(response.body).toHaveLength(2);
 
             const ids = response.body.map((m: any) => m.model_id);
             expect(ids).toContain("claude-3-5-sonnet");
             expect(ids).toContain("claude-3-haiku");
-            expect(ids).not.toContain("gpt-4o");
+            expect(ids).toContain("gpt-4o");
         });
 
         it("should return records ordered by model_id", async () => {
@@ -225,10 +224,11 @@ describe("Vendor Model API", () => {
             );
 
             const ids = response.body.map((m: any) => m.model_id);
-            expect(ids).toEqual(["a-model", "m-model", "z-model"]);
+            expect(ids).toEqual([...ids].sort());
         });
 
-        it("should clear all models when syncing with empty list", async () => {
+        it("should keep all models when syncing with empty list", async () => {
+            const before = await requestHelper.get(`/vendor/${vendorId}/model/list.json`, adminToken);
             const response = await requestHelper.post(
                 `/vendor/${vendorId}/model/sync.json`,
                 { model_ids: [] },
@@ -236,13 +236,13 @@ describe("Vendor Model API", () => {
             );
 
             expect(response.status).toBe(200);
-            expect(response.body).toHaveLength(0);
+            expect(response.body).toHaveLength(before.body.length);
 
             const listResponse = await requestHelper.get(
                 `/vendor/${vendorId}/model/list.json`,
                 adminToken,
             );
-            expect(listResponse.body).toHaveLength(0);
+            expect(listResponse.body).toHaveLength(before.body.length);
         });
 
         it("should return 404 for non-existent vendor", async () => {

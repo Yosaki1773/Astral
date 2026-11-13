@@ -27,22 +27,22 @@ describe("upstreamFailureUtil.detectUpstreamBodyFailure", () => {
             });
         });
 
-        it("does not flag incomplete structured error payloads", () => {
+        it("flags explicit protocol error events even when details are incomplete", () => {
             expect(upstreamFailureUtil.detectUpstreamBodyFailure(ApiFormat.RESPONSES, JSON.stringify({
                 type: "error",
                 error: { type: "transient" },
-            }))).toBeNull();
+            }))).toEqual({ code: null });
             expect(upstreamFailureUtil.detectUpstreamBodyFailure(ApiFormat.ANTHROPIC, JSON.stringify({
                 type: "error",
                 error: { message: "missing type" },
-            }))).toBeNull();
+            }))).toEqual({ code: null });
             expect(upstreamFailureUtil.detectUpstreamBodyFailure(ApiFormat.OPENAI, JSON.stringify({
                 error: { type: "metadata" },
             }))).toBeNull();
         });
-        it("does not flag an unstructured error event", () => {
-            expect(upstreamFailureUtil.detectUpstreamBodyFailure(ApiFormat.RESPONSES, JSON.stringify({ type: "error" }))).toBeNull();
-            expect(upstreamFailureUtil.detectUpstreamBodyFailure(ApiFormat.RESPONSES, JSON.stringify({ type: "error", error: "oops" }))).toBeNull();
+        it("flags explicit error events without structured details", () => {
+            expect(upstreamFailureUtil.detectUpstreamBodyFailure(ApiFormat.RESPONSES, JSON.stringify({ type: "error" }))).toEqual({ code: null });
+            expect(upstreamFailureUtil.detectUpstreamBodyFailure(ApiFormat.RESPONSES, JSON.stringify({ type: "error", error: "oops" }))).toEqual({ code: null });
         });
 
         it("does not flag a completed response", () => {
@@ -140,7 +140,7 @@ describe("upstreamFailureUtil.detectUpstreamBodyFailure", () => {
             expect(upstreamFailureUtil.detectUpstreamBodyFailure(ApiFormat.ANTHROPIC, JSON.stringify({
                 type: "error",
                 error: "oops",
-            }))).toBeNull();
+            }))).toEqual({ code: null });
         });
         it("does not flag a normal message", () => {
             const body = JSON.stringify({

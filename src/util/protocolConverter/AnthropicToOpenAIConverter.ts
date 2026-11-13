@@ -1,3 +1,4 @@
+import protocolConverterUtil from "./protocolConverterUtil";
 import { BaseConverter } from "./BaseConverter";
 import type {
     AnthropicRequest,
@@ -5,6 +6,7 @@ import type {
     AnthropicResponse,
     OpenAIResponse,
     OpenAIMessage,
+    OpenAIContentPart,
     OpenAITool,
     AnthropicContentBlock,
     AnthropicSSEEvent,
@@ -85,18 +87,24 @@ export class AnthropicToOpenAIConverter extends BaseConverter {
                     const toolResults = msg.content.filter((b) => b.type === "tool_result");
                     const normalBlocks = msg.content.filter((b) => b.type !== "tool_result");
 
-                    // OpenAI requires tool responses to immediately follow assistant tool_calls.
+                    // tool 消息保持文本；图片集中放到全部工具结果之后，避免打断 tool_calls 的结果序列。
+                    const toolImages: OpenAIContentPart[] = [];
                     for (const tr of toolResults) {
+                        const blocks = typeof tr.content === "string" ? [] : tr.content ?? [];
                         messages.push({
                             role: "tool",
                             tool_call_id: tr.tool_use_id,
-                            content: typeof tr.content === "string" ? tr.content : JSON.stringify(tr.content),
+                            content: typeof tr.content === "string" ? tr.content : blocks.filter(block => block.type === "text").map(block => block.text || "").join("\n"),
                         });
+                        for (const block of blocks) {
+                            if (block.type === "image") {
+                                toolImages.push({ type: "image_url", image_url: { url: protocolConverterUtil.anthropicImageSourceToUrl(block.source) } });
+                            }
+                        }
                     }
 
-                    if (normalBlocks.length > 0) {
-                        const texts = normalBlocks.map((b) => b.text || "").join("\n");
-                        messages.push({ role: "user", content: texts });
+                    if (normalBlocks.length > 0 || toolImages.length > 0) {
+                        messages.push({ role: "user", content: this.convertUserContent(normalBlocks, toolImages) });
                     }
                 }
             } else if (msg.role === "assistant") {
@@ -190,6 +198,22 @@ export class AnthropicToOpenAIConverter extends BaseConverter {
         }
 
         return openaiReq;
+    }
+
+
+    private convertUserContent(blocks: AnthropicContentBlock[], extraImages: OpenAIContentPart[]): string | OpenAIContentPart[] {
+        if (extraImages.length === 0 && !blocks.some(block => block.type === "image")) {
+            return blocks.map(block => block.text || "").join("\n");
+        }
+        const parts: OpenAIContentPart[] = [];
+        for (const block of blocks) {
+            if (block.type === "text" && block.text) {
+                parts.push({ type: "text", text: block.text });
+            } else if (block.type === "image") {
+                parts.push({ type: "image_url", image_url: { url: protocolConverterUtil.anthropicImageSourceToUrl(block.source) } });
+            }
+        }
+        return [...parts, ...extraImages];
     }
 
 

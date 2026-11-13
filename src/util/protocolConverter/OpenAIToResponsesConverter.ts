@@ -1,3 +1,4 @@
+import customError from "../../customError";
 import { BaseConverter } from "./BaseConverter";
 import type {
     OpenAIRequest,
@@ -11,6 +12,8 @@ import type {
     ResponsesNonStreamResponse,
     ResponsesInputItem,
     ResponsesOutputItem,
+    ResponsesContentPart,
+    ResponsesEventResponseFailed,
 } from "./responsesTypes";
 import {
     buildThinkingConfigFromOpenAI,
@@ -51,15 +54,16 @@ export class OpenAIToResponsesConverter extends BaseConverter {
                     });
                 } else if (Array.isArray(msg.content)) {
                     // 多模态内容
-                    const contentParts: any[] = [];
-                    for (const part of msg.content as any[]) {
+                    const contentParts: ResponsesContentPart[] = [];
+                    for (const part of msg.content) {
                         if (part.type === "text") {
                             contentParts.push({ type: "input_text", text: part.text });
                         } else if (part.type === "image_url") {
-                            contentParts.push({
-                                type: "input_image",
-                                image_url: part.image_url.url,
-                            });
+                            const url = typeof part.image_url === "string" ? part.image_url : part.image_url?.url;
+                            if (!url) throw new customError.AppError("image_url.url is required for image protocol conversion", 400);
+                            contentParts.push({ type: "input_image", image_url: url });
+                        } else {
+                            throw new customError.AppError(`Unsupported OpenAI content part type for protocol conversion: ${(part as { type?: string }).type ?? "unknown"}`, 400);
                         }
                     }
                     if (contentParts.length > 0) {
@@ -254,6 +258,10 @@ export class OpenAIToResponsesConverter extends BaseConverter {
         const eventType = data.type as string;
 
         switch (eventType) {
+            case "response.failed": {
+                const event = data as unknown as ResponsesEventResponseFailed;
+                return [{ event: "error", data: JSON.stringify({ error: event.response?.error ?? { message: "Upstream response failed" } }) }];
+            }
             case "response.created": {
                 // 发送首个 chunk（包含 role）
                 const response = data.response as any;

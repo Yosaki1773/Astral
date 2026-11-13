@@ -165,6 +165,7 @@ describe("Upstream Timeout & Orphan Recovery", () => {
 
         expect(record.status).toBe("failed");
         expect(record.failed_code).toBe("upstream_timeout");
+        expect(record.response_data).toContain(`${SHORT_TIMEOUT}ms`);
     }, 15000);
 
 
@@ -180,6 +181,7 @@ describe("Upstream Timeout & Orphan Recovery", () => {
 
         expect(record.status).toBe("failed");
         expect(record.failed_code).toBe("upstream_timeout");
+        expect(record.response_data).toContain(`${SHORT_TIMEOUT}ms`);
     }, 15000);
 
 
@@ -195,6 +197,7 @@ describe("Upstream Timeout & Orphan Recovery", () => {
 
         expect(record.status).toBe("failed");
         expect(record.failed_code).toBe("upstream_timeout");
+        expect(record.response_data).toContain(`${SHORT_TIMEOUT}ms`);
     }, 15000);
 
 

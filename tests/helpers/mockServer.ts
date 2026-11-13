@@ -225,7 +225,11 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
     mockLog(requestMsg);
 
     // Handle different endpoints (more specific paths must come before generic ones)
-    if (url.includes("/chat/completions/incomplete")) {
+    if (url.includes("/chat/completions/stream-error")) {
+        req.resume();
+        res.writeHead(200, { "Content-Type": "text/event-stream" });
+        res.end(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: "partial" }, finish_reason: "stop" }] })}\n\ndata: ${JSON.stringify({ error: { code: "server_error", message: "upstream failed after finish" } })}\n\ndata: [DONE]\n\n`);
+    } else if (url.includes("/chat/completions/incomplete")) {
         handleOpenAIStreamIncomplete(req, res);
     } else if (url.includes("/chat/completions/no-done-no-usage")) {
         handleOpenAIStreamNoDoneNoUsage(req, res);
@@ -300,6 +304,7 @@ function handleOpenAIChat(req: IncomingMessage, res: ServerResponse): void {
     req.on("end", () => {
         try {
             const data = body ? JSON.parse(body) : {};
+            captureRequest(req, body, data);
             const isStream = data.stream === true;
             const hasTools = Array.isArray(data.tools) && data.tools.length > 0;
 
@@ -854,6 +859,7 @@ function handleAnthropicMessages(
     req.on("end", () => {
         try {
             const data = body ? JSON.parse(body) : {};
+            captureRequest(req, body, data);
             const isStream = data.stream === true;
             const hasTools = Array.isArray(data.tools) && data.tools.length > 0;
 

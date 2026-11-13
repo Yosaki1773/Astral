@@ -76,6 +76,16 @@ describe("rateLimitService", () => {
         expect(err.retryAfterSeconds).toBe(30);
     });
 
+    it.each([[1_200, 59], [2_200, 58]])("after %i milliseconds, rpm=1 reports %i seconds until retry", async (elapsedMs, expectedSeconds) => {
+        const r = rule(1, { rpm: 1 });
+        await rateLimitService.checkAndAdmit(r, ctx);
+        advance(elapsedMs);
+
+        const err = await rateLimitService.checkAndAdmit(r, ctx).catch(e => e);
+        expect(err).toBeInstanceOf(customError.RateLimitError);
+        expect(err.retryAfterSeconds).toBe(expectedSeconds);
+    });
+
     it("retry-after shrinks after partial refill", async () => {
         const r = rule(1, { rpm: 2 });
         await rateLimitService.checkAndAdmit(r, ctx);
