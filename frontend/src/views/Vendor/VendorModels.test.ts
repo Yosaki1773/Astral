@@ -40,7 +40,7 @@ async function openDialog(upstreamModels = ['old-model', 'new-model']) {
 }
 
 
-describe('VendorModels additive fetch dialog', () => {
+describe('VendorModels sync selection dialog', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         getVendor.mockResolvedValue({ id: 1, name: 'test-vendor' });
@@ -48,21 +48,22 @@ describe('VendorModels additive fetch dialog', () => {
         syncVendorModels.mockResolvedValue([]);
     });
 
-    it('marks saved models as added and prevents canceling through the row', async () => {
+    it('preselects saved models and allows canceling through the row', async () => {
         const wrapper = await openDialog();
         const row = wrapper.findAll('.model-checkbox-item').find(item => item.text().includes('old-model'))!;
-        expect(row.find('.model-saved-tag').text()).toBe('已添加');
-        expect((row.get('input').element as HTMLInputElement).disabled).toBe(true);
-        await row.trigger('click');
+        expect(row.find('.model-saved-tag').exists()).toBe(false);
+        expect((row.get('input').element as HTMLInputElement).disabled).toBe(false);
         expect((row.get('input').element as HTMLInputElement).checked).toBe(true);
+        await row.trigger('click');
+        expect((row.get('input').element as HTMLInputElement).checked).toBe(false);
     });
 
-    it('deselects new models only when clicking 全不选', async () => {
+    it('deselects both saved and new models when clicking 全不选', async () => {
         const wrapper = await openDialog();
         await wrapper.findAll('.model-checkbox-item').find(item => item.text().includes('new-model'))!.trigger('click');
         await wrapper.findAll('button').find(button => button.text() === '全不选')!.trigger('click');
         const rows = wrapper.findAll('.model-checkbox-item');
-        expect((rows[0]!.get('input').element as HTMLInputElement).checked).toBe(true);
+        expect((rows[0]!.get('input').element as HTMLInputElement).checked).toBe(false);
         expect((rows[1]!.get('input').element as HTMLInputElement).checked).toBe(false);
     });
 });

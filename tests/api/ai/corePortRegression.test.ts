@@ -102,7 +102,7 @@ describe("priority core port API regression", () => {
         expect(record.cost).toBe(0);
     });
 
-    it("retains a routed vendor model and its formats when only new models are synced", async () => {
+    it("retains a selected routed vendor model and its formats when syncing models", async () => {
         const model = await createModel("openai");
         const old = await requestHelper.post(`/vendor/${model.vendorId}/model/add.json`, { model_id: "old-upstream" }, adminToken);
         expect(old.status).toBe(200);
@@ -112,7 +112,7 @@ describe("priority core port API regression", () => {
             routing_config: { upstreams: [{ vendor_id: model.vendorId, vendor_model_id: old.body.id, enabled: true }] },
         }, adminToken);
         expect(updated.status).toBe(200);
-        const synced = await requestHelper.post(`/vendor/${model.vendorId}/model/sync.json`, { model_ids: ["new-upstream", "new-upstream"] }, adminToken);
+        const synced = await requestHelper.post(`/vendor/${model.vendorId}/model/sync.json`, { model_ids: ["old-upstream", "new-upstream"] }, adminToken);
         expect(synced.status).toBe(200);
         expect(synced.body.find((item: { id: number }) => item.id === old.body.id)).toMatchObject({ model_id: "old-upstream", allowed_formats: ["openai"] });
         const response = await requestHelper.post(endpoints.openai, { model: model.name, messages: [{ role: "user", content: "hi" }] }, userToken);

@@ -102,7 +102,7 @@
         <!-- 从供应商获取模型的确认弹窗 -->
         <a-modal
             v-model:open="syncModalVisible"
-            title="选择要添加的模型"
+            title="选择要保存的模型"
             width="600px"
             :confirm-loading="syncLoading"
             @ok="handleSyncConfirm"
@@ -125,15 +125,13 @@
                 />
                 <div class="model-checkbox-group">
                     <template v-for="modelId in filteredModels" :key="modelId">
-                        <div class="model-checkbox-item" :class="{ 'is-saved': savedModelIds.has(modelId) }" @click="toggleModel(modelId, !selectedModelIds.includes(modelId))">
+                        <div class="model-checkbox-item" @click="toggleModel(modelId, !selectedModelIds.includes(modelId))">
                             <a-checkbox
                                 :checked="selectedModelIds.includes(modelId)"
-                                :disabled="savedModelIds.has(modelId)"
                                 @change="(e: Event) => { e.stopPropagation(); toggleModel(modelId, (e.target as HTMLInputElement).checked); }"
                                 @click.stop
                             />
                             <span class="model-checkbox-label">{{ modelId }}</span>
-                            <span v-if="savedModelIds.has(modelId)" class="model-saved-tag">已添加</span>
                         </div>
                     </template>
                     <div v-if="filteredModels.length === 0" class="empty-hint">
@@ -182,9 +180,6 @@ const filteredModels = computed(() =>
         ? fetchedModels.value.filter(id => id.toLowerCase().includes(modelSearch.value.toLowerCase()))
         : fetchedModels.value,
 );
-
-// 自动获取只添加模型，删除须通过列表中的显式删除操作。
-const savedModelIds = computed(() => new Set(models.value.map(model => model.model_id)));
 
 const FORMAT_OPTIONS = ['openai', 'anthropic', 'responses'] as const;
 const formatOptions = FORMAT_OPTIONS.map(f => ({ label: f.toUpperCase(), value: f }));
@@ -304,7 +299,6 @@ function handleDelete(record: VendorModel) {
 }
 
 function toggleModel(modelId: string, checked: boolean) {
-    if (savedModelIds.value.has(modelId)) return;
     if (checked) {
         if (!selectedModelIds.value.includes(modelId)) {
             selectedModelIds.value = [...selectedModelIds.value, modelId];
@@ -319,7 +313,7 @@ function selectAll() {
 }
 
 function selectNone() {
-    selectedModelIds.value = selectedModelIds.value.filter(id => savedModelIds.value.has(id));
+    selectedModelIds.value = [];
 }
 
 function handleEditFormats(record: VendorModel) {
@@ -411,19 +405,6 @@ function handleBack() {
 
 .model-checkbox-item:hover {
     background: var(--bg-info-item, #fafafa);
-}
-
-.model-checkbox-item.is-saved {
-    cursor: default;
-}
-
-.model-saved-tag {
-    flex: 0 0 auto;
-    padding: 0 6px;
-    border: 1px solid var(--tag-default-border, #d9d9d9);
-    border-radius: 4px;
-    color: var(--text-secondary, #888);
-    font-size: 11px;
 }
 
 .model-checkbox-label {
