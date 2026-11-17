@@ -15,7 +15,7 @@ export default defineConfig({
     testTimeout: 60000,
     // Pass TEST_MODE to forked processes (Vitest 4 syntax)
     execArgv: [],
-    isolate: false,
+    isolate: true,
     env: {
       TEST_MODE: 'worker',
     },
