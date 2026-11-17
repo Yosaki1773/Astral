@@ -1,7 +1,54 @@
-import { SgVendor } from "../model/sgVendor";
-import { ApiFormat } from "../constants";
+import { SgVendor, SgVendorConfig } from "../model/sgVendor";
+import { ApiFormat, VendorAuthMode } from "../constants";
 import customError from "../customError";
 import vendorManager from "../manager/vendorManager";
+import vendorModelManager from "../manager/vendorModelManager";
+import modelManager from "../manager/modelManager";
+import fetchUtil from "../util/fetchUtil";
+import ormService from "./ormService";
+
+interface VendorWriteData {
+    type?: string;
+    name?: string;
+    token?: string;
+    urls?: Record<string, string>;
+    config?: Record<string, any>;
+    model_ids?: unknown;
+}
+
+function normalizeModelIds(value: unknown): string[] | undefined {
+    if (value === undefined) return undefined;
+    if (!Array.isArray(value) || value.some(id => typeof id !== "string" || !id.trim())) {
+        throw new customError.AppError("model_ids must be an array of non-empty strings", 400);
+    }
+    return [...new Set(value.map(id => id.trim()))];
+}
+
+
+async function createVendor(data: VendorWriteData, tenantId: number, db?: D1Database): Promise<SgVendor> {
+    const modelIds = normalizeModelIds(data.model_ids);
+    const vendor = new SgVendor({
+        type: data.type, name: data.name, token: data.token,
+        urls: data.urls ?? {}, config: new SgVendorConfig(data.config), tenant_id: tenantId,
+    });
+    if (!vendor.type || !vendor.name || !vendor.token) throw new customError.AppError("Missing required fields");
+    if (await vendorManager.findByName(vendor.name, tenantId)) {
+        throw new customError.AppError("A vendor with this name already exists", 409);
+    }
+    validateVendorConfig(data.config);
+    return modelIds === undefined
+        ? vendorManager.create(vendor)
+        : vendorManager.saveWithModels(vendor, modelIds, db);
+}
+
+
+async function recordCall(vendorId: number, calledAt: number): Promise<void> {
+    try {
+        await vendorManager.markCalled(vendorId, calledAt);
+    } catch (error) {
+        console.warn(`[vendor] Failed to update last call for ${vendorId}:`, error);
+    }
+}
 
 
 /**
@@ -32,9 +79,11 @@ function validateVendorConfig(config?: Record<string, any>): void {
 
 async function updateVendor(
     vendorId: number,
-    data: { type?: string; name?: string; token?: string; urls?: Record<string, string>; config?: Record<string, any> },
+    data: VendorWriteData,
     tenantId?: number,
+    db?: D1Database,
 ): Promise<SgVendor | null> {
+    const modelIds = normalizeModelIds(data.model_ids);
     validateVendorConfig(data.config);
 
     const vendor = tenantId !== undefined
@@ -68,6 +117,14 @@ async function updateVendor(
         updateData.config = JSON.stringify(data.config);
     }
 
+    if (modelIds !== undefined) {
+        vendor.type = updateData.type;
+        vendor.name = updateData.name;
+        vendor.token = updateData.token;
+        if (data.urls !== undefined) vendor.urls = data.urls;
+        if (data.config !== undefined) vendor.config = new SgVendorConfig(data.config);
+        return vendorManager.saveWithModels(vendor, modelIds, db);
+    }
     return await vendorManager.update(vendorId, updateData, tenantId);
 }
 
@@ -122,39 +179,30 @@ function isLlmModel(modelId: string): boolean {
  * 从上游 API 获取模型列表
  */
 export async function fetchUpstreamModels(vendor: SgVendor): Promise<string[]> {
-    let baseUrl: string | null = null;
-    const openaiUrl = vendor.getUrlByFormat(ApiFormat.OPENAI);
-    if (openaiUrl !== null) {
-        baseUrl = openaiUrl.replace(/\/chat\/completions$/, "");
+    const format = [ApiFormat.OPENAI, ApiFormat.RESPONSES, ApiFormat.ANTHROPIC]
+        .find(format => vendor.getUrlByFormat(format) !== null);
+    if (!format) {
+        throw new customError.AppError("vendor does not have url for openai, responses or anthropic format", 400);
+    }
+    const endpointUrl = vendor.getUrlByFormat(format)!;
+    const modelsUrl = endpointUrl.replace(/\/(chat\/completions|responses|messages)(?=\?|$)/, "/models");
+    const requestHeaders: Record<string, string> = { "Content-Type": "application/json" };
+    if (format === ApiFormat.ANTHROPIC && vendor.config.auth_mode === VendorAuthMode.API_KEY) {
+        requestHeaders["x-api-key"] = vendor.token;
+        requestHeaders["anthropic-version"] = "2023-06-01";
     } else {
-        const responsesUrl = vendor.getUrlByFormat(ApiFormat.RESPONSES);
-        if (responsesUrl !== null) {
-            baseUrl = responsesUrl.replace(/\/responses$/, "");
-        }
+        requestHeaders.Authorization = vendor.token.startsWith("Bearer ") ? vendor.token : `Bearer ${vendor.token}`;
     }
-
-    if (baseUrl === null) {
-        throw new customError.AppError("vendor does not have url for openai or responses format", 400);
-    }
-    const modelsUrl = `${baseUrl}/models`;
-
-    const token = vendor.token;
-    const authHeader = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
-
-    // 获取模型列表与网关请求保持一致的 User-Agent 口径
     const vendorUserAgent = vendor.config.getUserAgent();
-    const requestHeaders: Record<string, string> = {
-        Authorization: authHeader,
-        "Content-Type": "application/json",
-    };
-    if (vendorUserAgent) {
-        requestHeaders["User-Agent"] = vendorUserAgent;
-    }
+    if (vendorUserAgent) requestHeaders["User-Agent"] = vendorUserAgent;
 
     try {
+        const dispatcher = ormService.isNode ? await fetchUtil.getDispatcher(vendor.config) : undefined;
         const response = await fetch(modelsUrl, {
             method: "GET",
             headers: requestHeaders,
+            signal: AbortSignal.timeout(30000),
+            ...(dispatcher ? { dispatcher } as any : {}),
         });
 
         if (!response.ok) {
@@ -168,7 +216,7 @@ export async function fetchUpstreamModels(vendor: SgVendor): Promise<string[]> {
         const data: any = await response.json();
 
         const models: string[] = Array.isArray(data?.data)
-            ? data.data.map((m: any) => m.id).filter(Boolean).filter(isLlmModel)
+            ? [...new Set<string>(data.data.map((m: any) => m.id).filter((id: unknown) => typeof id === "string" && id.trim()).filter(isLlmModel))]
             : [];
 
         return models;
@@ -179,8 +227,45 @@ export async function fetchUpstreamModels(vendor: SgVendor): Promise<string[]> {
 }
 
 
+async function getModelSummaries(vendorIds: number[], tenantId: number) {
+    if (vendorIds.length === 0) return {};
+    const [vendorModels, systemModels] = await Promise.all([
+        vendorModelManager.listByVendors(vendorIds),
+        modelManager.listByTenant(tenantId),
+    ]);
+    const references = new Map<string, Set<string>>();
+    const vendors = new Set(vendorIds);
+    for (const model of systemModels) {
+        if (!model.name) continue;
+        for (const upstream of model.getRoutingConfig().upstreams) {
+            if (!vendors.has(upstream.vendor_id)) continue;
+            const key = upstream.vendor_model_id !== undefined
+                ? `${upstream.vendor_id}:id:${upstream.vendor_model_id}`
+                : `${upstream.vendor_id}:name:${model.name}`;
+            if (!references.has(key)) references.set(key, new Set());
+            references.get(key)!.add(model.name);
+        }
+    }
+    const result: Record<number, Array<{ id: number; model_id: string; system_model_names: string[] }>> = {};
+    for (const vendorModel of vendorModels) {
+        const names = new Set([
+            ...(references.get(`${vendorModel.vendor_id}:id:${vendorModel.id}`) ?? []),
+            ...(references.get(`${vendorModel.vendor_id}:name:${vendorModel.model_id}`) ?? []),
+        ]);
+        (result[vendorModel.vendor_id] ??= []).push({
+            id: vendorModel.id, model_id: vendorModel.model_id, system_model_names: [...names],
+        });
+    }
+    return result;
+}
+
+
 export default {
+    createVendor,
     updateVendor,
+    recordCall,
+    getModelSummaries,
+    normalizeModelIds,
     findVendorByUrl,
     fetchUpstreamModels,
     validateVendorConfig,

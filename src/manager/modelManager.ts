@@ -106,6 +106,11 @@ async function listModels(options: ModelListOptions, scope?: TenantScope) {
 }
 
 
+async function listByTenant(tenantId: number): Promise<SgModel[]> {
+    return (await SgModel.query().where("tenant_id", tenantId).get()).all();
+}
+
+
 async function hasModelsUsingVendor(vendorId: number, tenantId?: number): Promise<boolean> {
     const query = SgModel.query();
     filterByVendor(query, vendorId);
@@ -198,6 +203,7 @@ export default {
     findByIdInTenant,
     getByIds,
     listModels,
+    listByTenant,
     hasModelsUsingVendor,
     listEnabledModels,
     checkDuplicateModel,

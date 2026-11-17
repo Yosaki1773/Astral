@@ -1,6 +1,7 @@
 import { SgVendor } from "../model/sgVendor";
 import { resolveUpstreamFormat } from "../util/protocol/protocolUtil";
 import fetchUtil from "../util/fetchUtil";
+import vendorService from "./vendorService";
 import { ApiFormat, VendorAuthMode } from "../constants";
 
 
@@ -145,11 +146,13 @@ export async function testVendorConnectivity(
         };
     }
 
+    let calledAt: number | undefined;
     try {
         const proxyLog = proxyInfo ? ` via ${proxyInfo.type} proxy ${proxyInfo.url}` : "";
         console.log(`[testVendor] Testing vendor ${vendor.name} (${vendor.id}) with model ${model} at ${url}${proxyLog}`);
         const startTime = Date.now();
         const dispatcher = await fetchUtil.getDispatcher(vendor.config);
+        calledAt = Date.now();
         const response = await fetch(url, {
             method: "POST",
             headers,
@@ -195,6 +198,8 @@ export async function testVendorConnectivity(
             request_headers: sanitizeHeaders(headers),
             request_body: requestBodyDisplay,
         };
+    } finally {
+        if (calledAt !== undefined) await vendorService.recordCall(vendor.id, calledAt);
     }
 }
 

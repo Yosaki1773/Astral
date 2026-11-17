@@ -33,6 +33,21 @@ export interface Vendor extends BaseEntity {
     urls: VendorUrls;
     config: VendorConfig;
     model_count: number;
+    last_called_at?: number | null;
+    models?: VendorModelSummary[];
+}
+
+export interface VendorModelSummary {
+    id: number;
+    model_id: string;
+    system_model_names: string[];
+}
+
+export interface VendorConnectionRequest {
+    type: VendorType;
+    token: string;
+    urls?: VendorUrls;
+    config?: VendorConfig;
 }
 
 export interface CreateVendorRequest {
@@ -41,6 +56,7 @@ export interface CreateVendorRequest {
     token: string;
     urls?: VendorUrls;
     config?: VendorConfig;
+    model_ids?: string[];
 }
 
 export interface UpdateVendorRequest {
@@ -49,6 +65,7 @@ export interface UpdateVendorRequest {
     token?: string;
     urls?: VendorUrls;
     config?: VendorConfig;
+    model_ids?: string[];
 }
 
 export interface VendorQuery extends TableQuery {

@@ -147,6 +147,27 @@ describe("SgVendor.getUrlByFormat — URL merge & resolution", () => {
         });
     });
 
+    describe("base URL normalization", () => {
+        it.each([
+            [ApiFormat.OPENAI, "chat/completions"],
+            [ApiFormat.ANTHROPIC, "messages"],
+            [ApiFormat.RESPONSES, "responses"],
+        ])("normalizes %s base URLs without duplicating v1", (format, endpoint) => {
+            for (const base of ["https://my-api.com", "https://my-api.com///", "https://my-api.com/v1", "https://my-api.com/v1///"]) {
+                const v = makeVendor("other", { [format]: base });
+                expect(v.getUrlByFormat(format)).toBe(`https://my-api.com/v1/${endpoint}`);
+                expect(v.urls[format]).toBe(base);
+            }
+            const full = makeVendor("other", { [format]: `https://my-api.com/v1/${endpoint}///` });
+            expect(full.getUrlByFormat(format)).toBe(`https://my-api.com/v1/${endpoint}`);
+        });
+
+        it("preserves nonstandard presets", () => {
+            expect(makeVendor("google").getUrlByFormat(ApiFormat.OPENAI)).toBe("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
+            expect(makeVendor("volcengine_coding").getUrlByFormat(ApiFormat.OPENAI)).toBe("https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions");
+        });
+    });
+
     describe("responses format requires explicit configuration", () => {
         it("returns null when only an openai URL is configured (no derivation)", () => {
             const v = makeVendor("other", {

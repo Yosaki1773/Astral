@@ -20,6 +20,7 @@ import upstreamHealthService from "./upstreamHealthService";
 import abortTimeoutUtil from "../util/abortTimeoutUtil";
 import RoutingContext from "./routingService/routingContext";
 import ruleService from "./ruleService";
+import vendorService from "./vendorService";
 
 
 // 可重试的 HTTP 错误响应转成异常，与网络异常汇入同一个失败处理点
@@ -276,9 +277,11 @@ async function sendRequestToUpstream(
     const clientAbortCtrl = new abortTimeoutUtil.TimeoutAbortController(headersTimeoutMs, c.req.raw.signal);
 
     let upstreamRes: Response;
+    let calledAt: number | undefined;
     try {
         // 如果该 vendor 配置了跳过 TLS 验证（内网自签证书场景），注入 undici Agent
         const dispatcher = await fetchUtil.getDispatcher(vendor.config);
+        calledAt = Date.now();
         upstreamRes = await fetch(url, {
             method: "POST",
             headers: finalHeaders,
@@ -306,6 +309,7 @@ async function sendRequestToUpstream(
         throw error;
     } finally {
         clientAbortCtrl.dispose();
+        if (calledAt !== undefined) await vendorService.recordCall(vendor.id, calledAt);
     }
     console.log("upstream response status:", upstreamRes.status);
 

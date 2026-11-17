@@ -21,6 +21,7 @@ function formatVendor(vendor: SgVendor, modelCount = 0) {
         urls: vendor.urls,
         config: vendor.config,
         model_count: modelCount,
+        last_called_at: vendor.last_called_at ?? null,
         created_at: vendor.created_at,
         updated_at: vendor.updated_at,
     };
@@ -39,7 +40,11 @@ async function listVendors(c: Context) {
         offset,
     }, scope);
 
-    const formattedVendors = vendors.map(v => formatVendor(v, modelCounts[v.id] ?? 0));
+    const models = await vendorService.getModelSummaries(vendors.map(v => v.id), scope.tenantId);
+    const formattedVendors = vendors.map(v => ({
+        ...formatVendor(v, modelCounts[v.id] ?? 0),
+        models: models[v.id] ?? [],
+    }));
     return c.json(createListResponse(formattedVendors, total));
 }
 
@@ -85,24 +90,7 @@ async function getVendorsByIds(c: Context) {
 async function createVendor(c: Context) {
     const scope = c.get("tenantScope")!;
     const body = await c.req.json();
-    const vendor = new SgVendor(body);
-
-    // Validation - 不验证 urls，允许为空
-    if (!vendor.type || !vendor.name || !vendor.token) {
-        throw new customError.AppError("Missing required fields");
-    }
-
-    // 归属由服务端写入，客户端 body 中的 tenant_id 忽略；供应商名租户内唯一
-    vendor.tenant_id = scope.tenantId;
-    const dup = await vendorManager.findByName(vendor.name, scope.tenantId);
-    if (dup) {
-        throw new customError.AppError("A vendor with this name already exists", 409);
-    }
-
-    vendorService.validateVendorConfig(vendor.config);
-
-    const instance = await vendorManager.create(vendor);
-
+    const instance = await vendorService.createVendor(body, scope.tenantId, c.env?.DB);
     return c.json(formatVendor(instance));
 }
 
@@ -117,7 +105,7 @@ async function updateVendor(c: Context) {
     }
 
     const body = await c.req.json();
-    const { type, name, token, urls, config } = body;
+    const { type, name, token, urls, config, model_ids } = body;
 
     const updatedVendor = await vendorService.updateVendor(vendorId, {
         type,
@@ -125,7 +113,8 @@ async function updateVendor(c: Context) {
         token,
         urls,
         config,
-    }, scope.tenantId);
+        model_ids,
+    }, scope.tenantId, c.env?.DB);
 
     if (!updatedVendor) {
         throw new customError.NotFoundError("Vendor not found");

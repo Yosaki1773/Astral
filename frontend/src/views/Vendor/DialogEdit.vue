@@ -5,6 +5,7 @@
         @ok="handleOk"
         @cancel="handleCancel"
         :confirm-loading="loading"
+        :ok-button-props="{ disabled: modelFetchLoading }"
         width="600px"
     >
         <a-form
@@ -65,7 +66,7 @@
                                 </a-select>
                             </a-col>
                             <a-col :span="16">
-                                <a-input v-model:value="item.url" placeholder="请输入 URL" />
+                                <a-input v-model:value="item.url" placeholder="请输入基础 URL（无需 /v1）" />
                             </a-col>
                             <a-col :span="2">
                                 <a-button type="text" danger @click="removeUrl(index)">
@@ -87,6 +88,14 @@
                     </a-button>
                 </template>
             </a-form-item>
+            <ModelSelect
+                v-if="visible"
+                v-model="modelIds"
+                :connection="draftData"
+                :initial-model-ids="initialModelIds"
+                :disabled="loading"
+                @loading="modelFetchLoading = $event"
+            />
             <!-- 高级设置 -->
             <SettingsCollapse v-model:activeKey="advancedActiveKey" panel-key="advanced" header="高级设置">
                 <div class="settings-row">
@@ -132,12 +141,13 @@
 import { ref, reactive, computed, watch } from 'vue';
 import type { FormInstance } from 'ant-design-vue/es';
 import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons-vue';
-import { updateVendor } from '@/api/vendor';
+import { updateVendor, listVendorModels } from '@/api/vendor';
 import { useDirectoryStore } from '@/stores/directory';
 import type { UpdateVendorRequest, Vendor, VendorType, VendorUrls, VendorAuthMode, VendorProxyType } from '@/types/vendor';
 import { notifyRequestError, notifySuccess } from '@/utils/requestFeedback';
 import { useVendorPresets } from '@/composables/useVendorPresets';
 import SettingsCollapse from '@/components/common/SettingsCollapse.vue';
+import ModelSelect from './ModelSelect.vue';
 
 const emit = defineEmits<{
     success: [vendor: Vendor];
@@ -145,6 +155,9 @@ const emit = defineEmits<{
 
 const visible = ref(false);
 const loading = ref(false);
+const modelFetchLoading = ref(false);
+const modelIds = ref<string[]>();
+const initialModelIds = ref<string[]>([]);
 const formRef = ref<FormInstance>();
 const advancedActiveKey = ref<string[]>([]);
 
@@ -224,6 +237,15 @@ async function open(vendor: Vendor) {
         if (url !== undefined) urlsForm.push({ type: key, url });
     });
 
+    modelIds.value = undefined;
+    modelFetchLoading.value = false;
+    try {
+        const models = await listVendorModels(vendor.id);
+        initialModelIds.value = models.map(model => model.model_id);
+    } catch (error) {
+        notifyRequestError(error, '加载供应商模型失败');
+        return;
+    }
     await loadPresets();
     urlsMode.value = PRESET_URLS.value[vendor.type] ? 'view' : 'edit';
     advancedActiveKey.value = [];
@@ -242,29 +264,32 @@ function removeUrl(index: number) {
     urlsForm.splice(index, 1);
 }
 
+const draftData = computed(() => {
+    const urls: VendorUrls = {};
+    urlsForm.forEach(item => { if (item.url) urls[item.type] = item.url; });
+    return {
+        type: formState.type,
+        name: formState.name,
+        token: formState.token,
+        urls,
+        config: {
+            auth_mode: formState.auth_mode,
+            skip_tls_verify: formState.skip_tls_verify,
+            user_agent_enabled: formState.user_agent_enabled || undefined,
+            user_agent: formState.user_agent_enabled ? (formState.user_agent.trim() || undefined) : undefined,
+            proxy: formState.proxy_type
+                ? { type: formState.proxy_type, url: formState.proxy_url }
+                : null,
+        },
+    };
+});
+
 async function handleOk() {
     try {
         await formRef.value?.validate();
-
-        const urls: VendorUrls = {};
-        urlsForm.forEach(item => {
-            if (item.url) urls[item.type] = item.url;
-        });
-
         const updateData: UpdateVendorRequest = {
-            type: formState.type,
-            name: formState.name,
-            token: formState.token,
-            urls,
-            config: {
-                auth_mode: formState.auth_mode,
-                skip_tls_verify: formState.skip_tls_verify,
-                user_agent_enabled: formState.user_agent_enabled || undefined,
-                user_agent: formState.user_agent_enabled ? (formState.user_agent.trim() || undefined) : undefined,
-                proxy: formState.proxy_type
-                    ? { type: formState.proxy_type, url: formState.proxy_url }
-                    : null,
-            },
+            ...draftData.value,
+            ...(modelIds.value !== undefined ? { model_ids: modelIds.value } : {}),
         };
 
         loading.value = true;

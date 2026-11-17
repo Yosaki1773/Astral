@@ -48,6 +48,22 @@
             :row-key="(record: Vendor) => record.id"
         >
             <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'name'">
+                    <a-popover placement="top" :trigger="['hover', 'focus', 'click']">
+                        <template #content>
+                            <div class="vendor-model-preview">
+                                <div v-for="model in record.models" :key="model.id" class="preview-model">
+                                    <span class="preview-model-name">{{ model.model_id }}</span>
+                                    <span v-if="model.system_model_names.length" class="preview-model-references">
+                                        系统模型：{{ model.system_model_names.join('、') }}
+                                    </span>
+                                </div>
+                                <span v-if="!record.models?.length" class="preview-empty">暂无配置模型</span>
+                            </div>
+                        </template>
+                        <button type="button" class="vendor-name" :aria-label="`${record.name}：查看配置模型`">{{ record.name }}</button>
+                    </a-popover>
+                </template>
                 <template v-if="column.key === 'type'">
                     <a-tag :color="getTypeColor(record.type)" :style="getTypeTagStyle(record.type)">
                         {{ getTypeLabel(record.type) }}
@@ -282,5 +298,48 @@ function getTypeTagStyle(type: VendorType) {
 
 .vendor-action-button {
     color: var(--accent-primary);
+}
+
+.vendor-name {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+
+.vendor-name:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 3px;
+}
+
+.vendor-model-preview {
+    max-width: min(420px, calc(100vw - 48px));
+    max-height: 300px;
+    overflow-y: auto;
+    overflow-wrap: anywhere;
+}
+
+.preview-model {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 0;
+}
+
+.preview-model + .preview-model {
+    border-top: 1px solid var(--border-color);
+}
+
+.preview-model-name {
+    color: var(--text-primary);
+}
+
+.preview-model-references, .preview-empty {
+    color: var(--text-secondary);
+    font-size: 13px;
 }
 </style>

@@ -1,6 +1,6 @@
 import { Context } from "hono";
 import { SgVendorModel } from "../model/sgVendorModel";
-import { SgVendor } from "../model/sgVendor";
+import { SgVendor, SgVendorConfig } from "../model/sgVendor";
 import vendorManager from "../manager/vendorManager";
 import vendorModelManager from "../manager/vendorModelManager";
 import vendorService from "../service/vendorService";
@@ -52,6 +52,17 @@ async function fetchVendorModels(c: Context) {
 
     const models = await vendorService.fetchUpstreamModels(vendor);
     return c.json({ models });
+}
+
+
+async function fetchDraftVendorModels(c: Context) {
+    const { type, token, urls, config } = await c.req.json();
+    if (!type || typeof type !== "string" || !token || typeof token !== "string") {
+        throw new customError.AppError("type and token are required", 400);
+    }
+    vendorService.validateVendorConfig(config);
+    const vendor = new SgVendor({ type, token, urls: urls ?? {}, config: new SgVendorConfig(config) });
+    return c.json({ models: await vendorService.fetchUpstreamModels(vendor) });
 }
 
 
@@ -169,6 +180,7 @@ async function deleteVendorModel(c: Context) {
 export default {
     listVendorModels,
     fetchVendorModels,
+    fetchDraftVendorModels,
     syncVendorModels,
     addVendorModel,
     updateVendorModel,

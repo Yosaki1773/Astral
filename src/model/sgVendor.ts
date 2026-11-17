@@ -81,6 +81,8 @@ class SgVendor extends Model {
     urls!: Record<string, string>;
     config!: SgVendorConfig;
     tenant_id!: number | null;
+    /** 最近一次实际模型请求的开始时间（Unix 毫秒），不依赖请求日志保留。 */
+    last_called_at!: number | null;
 
     casts = {
         urls: 'json',
@@ -116,35 +118,24 @@ class SgVendor extends Model {
      * @returns 完整的 URL 字符串；无法解析（缺 URL 或无法派生）时返回 null，由调用方处理
      */
     getUrlByFormat(format: ApiFormat): string | null {
-        const urls = this.getMergedUrls();
+        const rawUrl = this.getMergedUrls()[format];
+        if (!rawUrl) return null;
 
-        if (format === ApiFormat.RESPONSES) {
-            // Responses 格式：仅当 urls[RESPONSES] 显式配置时支持；与 ANTHROPIC 分支口径一致，
-            // 不再从 OPENAI URL 派生（派生得到的路径不代表上游真正实现了 responses 协议）。
-            const responsesUrl = urls[ApiFormat.RESPONSES];
-            if (responsesUrl) {
-                return responsesUrl.includes("/responses") ? responsesUrl : responsesUrl.replace(/\/$/, "") + "/responses";
-            }
-            return null;
-        }
+        let baseUrl = rawUrl.trim().replace(/\/+$/, "");
+        const endpoint = {
+            [ApiFormat.OPENAI]: "/chat/completions",
+            [ApiFormat.ANTHROPIC]: "/messages",
+            [ApiFormat.RESPONSES]: "/responses",
+        }[format];
+        // 显式完整接口地址保持兼容，不改写其路径。
+        if (baseUrl.includes(endpoint)) return baseUrl;
 
-        if (format === ApiFormat.ANTHROPIC) {
-            // Anthropic 格式：使用 urls[ANTHROPIC]
-            const anthropicUrl = urls[ApiFormat.ANTHROPIC];
-            if (anthropicUrl) {
-                return anthropicUrl.includes("/v1/messages") ? anthropicUrl : anthropicUrl.replace(/\/$/, "") + "/v1/messages";
-            }
-        }
-
-        if (format === ApiFormat.OPENAI) {
-            // OpenAI 格式：使用 urls[OPENAI]
-            const openaiUrl = urls[ApiFormat.OPENAI];
-            if (openaiUrl) {
-                return openaiUrl.includes("/chat/completions") ? openaiUrl : openaiUrl.replace(/\/$/, "") + "/chat/completions";
-            }
-        }
-
-        return null;
+        // Google /v1beta/openai、火山 /v3 等内置预设已有自己的版本路径。
+        const usesVersionedPreset = !this.urls[format]
+            && format !== ApiFormat.ANTHROPIC
+            && /\/v\d+(?:beta\d*)?(?:\/|$)/.test(baseUrl);
+        if (!baseUrl.endsWith("/v1") && !usesVersionedPreset) baseUrl += "/v1";
+        return baseUrl + endpoint;
     }
 
     /**

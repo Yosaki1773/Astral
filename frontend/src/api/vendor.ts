@@ -1,6 +1,6 @@
 import request from '../utils/request';
 import type { ListResult } from '../types';
-import type { Vendor, CreateVendorRequest, UpdateVendorRequest } from '../types/vendor';
+import type { Vendor, CreateVendorRequest, UpdateVendorRequest, VendorConnectionRequest } from '../types/vendor';
 import type { VendorQuery } from '../types/vendor';
 
 export interface VendorTestResponse {
@@ -52,6 +52,10 @@ export async function fetchVendorModelsByIds(ids: number[]): Promise<import('../
 
 export async function fetchVendorModels(vendorId: number): Promise<{ models: string[] }> {
     return request.get(`/vendor/${vendorId}/model/fetch.json`);
+}
+
+export async function fetchDraftVendorModels(data: VendorConnectionRequest): Promise<{ models: string[] }> {
+    return request.post('/vendor/model/fetch.json', data);
 }
 
 export async function syncVendorModels(vendorId: number, modelIds: string[]): Promise<import('../types/vendor').VendorModel[]> {
