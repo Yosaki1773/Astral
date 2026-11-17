@@ -68,6 +68,38 @@ async function clearPayloads(tenantId?: number): Promise<number> {
 
 const RECORD_ID_FROM_KEY = /^record\/(\d+)$/;
 
+
+function payloadContainsKeyword(payload: string | null, needle: string): boolean {
+    if (!payload) {
+        return false;
+    }
+    if (payload.toLowerCase().includes(needle)) {
+        return true;
+    }
+
+    // 详情展示会解析 JSON；同时搜索解码后的字符串，避免中文转义、引号、换行等漏检。
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(payload);
+    } catch {
+        // 失败响应可能是纯文本，已在上面的原文匹配中处理。
+        return false;
+    }
+
+    function containsText(value: unknown): boolean {
+        if (typeof value === "string") {
+            return value.toLowerCase().includes(needle);
+        }
+        if (value !== null && typeof value === "object") {
+            return Object.values(value).some(containsText);
+        }
+        return false;
+    }
+
+    return containsText(parsed);
+}
+
+
 /**
  * 按关键字扫描对象存储中所有 record 载荷，返回请求或响应字段中含子串的 record id 集合。
  * 大小写不敏感；只在 keyword 非空时调用。
@@ -95,9 +127,7 @@ async function findMatchingRecordIds(keyword: string): Promise<number[]> {
         }
 
         const payload = await readPayload(recordId);
-        const haystackRequest = payload.request?.toLowerCase() ?? "";
-        const haystackResponse = payload.response?.toLowerCase() ?? "";
-        if (haystackRequest.includes(needle) || haystackResponse.includes(needle)) {
+        if (payloadContainsKeyword(payload.request, needle) || payloadContainsKeyword(payload.response, needle)) {
             matched.push(recordId);
         }
     }
@@ -146,6 +176,15 @@ async function create(
     return record;
 }
 
+async function updateResponsePayload(recordId: number, responseData: string | null): Promise<void> {
+    if (await isPayloadRecordingEnabled()) {
+        const payload = await readPayload(recordId);
+        payload.response = responseData;
+        await writePayload(recordId, payload);
+    }
+}
+
+
 async function update(recordId: number, data: RecordUpdateData) {
     if (isLogEnabled()) {
         console.log(`[RecordService] Updating record ${recordId}:`, JSON.stringify(data, null, 2));
@@ -153,11 +192,7 @@ async function update(recordId: number, data: RecordUpdateData) {
 
     // response_data 存在对象存储，写入表前先落存储
     if (Object.prototype.hasOwnProperty.call(data, "response_data")) {
-        if (await isPayloadRecordingEnabled()) {
-            const payload = await readPayload(recordId);
-            payload.response = (data as any).response_data ?? null;
-            await writePayload(recordId, payload);
-        }
+        await updateResponsePayload(recordId, (data as any).response_data ?? null);
     }
 
     return recordManager.update(recordId, data);
@@ -304,6 +339,7 @@ async function recordFailedRequest(
 export default {
     create,
     update,
+    updateResponsePayload,
     latest,
     markFailed,
     markFailedIfActive,

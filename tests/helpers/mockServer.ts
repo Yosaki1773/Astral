@@ -312,7 +312,7 @@ function handleOpenAIChat(req: IncomingMessage, res: ServerResponse): void {
                 if (hasTools) {
                     handleOpenAIToolCallStreamResponse(res, data);
                 } else {
-                    handleOpenAIStreamResponse(res, data);
+                    handleOpenAIStreamResponse(res, data, req.url?.includes("/preview") ? 700 : 100);
                 }
             } else {
                 handleOpenAINonStreamResponse(res, data);
@@ -403,7 +403,7 @@ function handleOpenAINonStreamResponse(res: ServerResponse, data: any): void {
 /**
  * Handle OpenAI streaming response
  */
-function handleOpenAIStreamResponse(res: ServerResponse, data: any): void {
+function handleOpenAIStreamResponse(res: ServerResponse, data: any, intervalMs = 100): void {
     res.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
@@ -463,7 +463,7 @@ function handleOpenAIStreamResponse(res: ServerResponse, data: any): void {
 
         res.write(`data: ${JSON.stringify(chunk)}\n\n`);
         i++;
-    }, 100);
+    }, intervalMs);
 }
 
 function handleOpenAIToolCallStreamResponse(res: ServerResponse, data: any): void {

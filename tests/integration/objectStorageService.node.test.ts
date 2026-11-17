@@ -2,6 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import objectStorageService from "../../src/service/objectStorageService";
 import ormService from "../../src/service/ormService";
 import configService from "../../src/service/configService";
+import recordService from "../../src/service/recordService";
 import { ConfigKey, RunMode } from "../../src/constants";
 import dbHelper from "../helpers/dbHelper";
 import ormTestHelper from "../helpers/ormTestHelper";
@@ -256,6 +257,61 @@ describe("objectStorageService", () => {
         await configService.setValue(ConfigKey.RECORD_PAYLOAD_STORAGE, "r2");
 
         expect(await objectStorageService.getText("configured/fallback")).toBe("database-value");
+    });
+
+    it.each(["database", "r2"])("keyword search finds readable historical payloads after switching from %s", async (location) => {
+        const bucket = createMockR2Bucket();
+        objectStorageService.setR2Bucket(bucket);
+        await configService.setValue(ConfigKey.RECORD_PAYLOAD_STORAGE, location);
+        const historical = await recordService.create(1, 1, '{"content":"historical request"}');
+        await recordService.update(Number(historical.id), { response_data: '{"content":"historical reply"}' });
+
+        await configService.setValue(ConfigKey.RECORD_PAYLOAD_STORAGE, location === "database" ? "r2" : "database");
+        const current = await recordService.create(1, 1, '{"content":"current request"}');
+        await recordService.attachPayload(historical);
+
+        expect(historical.request_data).toBe('{"content":"historical request"}');
+        expect(historical.response_data).toBe('{"content":"historical reply"}');
+        expect(await recordService.findMatchingRecordIds("historical request")).toEqual([Number(historical.id)]);
+        expect(await recordService.findMatchingRecordIds("historical reply")).toEqual([Number(historical.id)]);
+        expect((await recordService.findMatchingRecordIds("request")).sort((a, b) => a - b))
+            .toEqual([Number(historical.id), Number(current.id)].sort((a, b) => a - b));
+    });
+
+    it.each(["database", "r2"])("lists keys from both locations without duplicates or unrelated prefixes with %s primary", async (location) => {
+        const bucket = createMockR2Bucket();
+        objectStorageService.setR2Bucket(bucket);
+        await configService.setValue(ConfigKey.RECORD_PAYLOAD_STORAGE, "database");
+        await objectStorageService.putText("record/shared", "database-value");
+        await objectStorageService.putText("record/database-only", "database-value");
+        await objectStorageService.putText("other/database", "unrelated");
+        await bucket.put("record/shared", new TextEncoder().encode("r2-value"));
+        await bucket.put("record/r2-only", new TextEncoder().encode("r2-value"));
+        await bucket.put("recording/r2", new TextEncoder().encode("unrelated"));
+        await configService.setValue(ConfigKey.RECORD_PAYLOAD_STORAGE, location);
+
+        const keys = await objectStorageService.listKeysByPrefix("record/");
+
+        expect(keys.sort()).toEqual(["record/database-only", "record/r2-only", "record/shared"]);
+        expect(await objectStorageService.getText("record/shared"))
+            .toBe(location === "database" ? "database-value" : "r2-value");
+    });
+
+    it("lists every R2 page even when R2 is the fallback location", async () => {
+        const bucket = createMockR2Bucket();
+        objectStorageService.setR2Bucket(bucket);
+        await configService.setValue(ConfigKey.RECORD_PAYLOAD_STORAGE, "database");
+        await objectStorageService.putText("record/database", "database-value");
+        for (let i = 0; i < 1001; i++) {
+            await bucket.put(`record/${i}`, new Uint8Array([1]));
+        }
+
+        const keys = await objectStorageService.listKeysByPrefix("record/");
+
+        expect(keys).toHaveLength(1002);
+        expect(keys).toContain("record/1000");
+        expect(keys).toContain("record/database");
+        expect(bucket.list).toHaveBeenCalledTimes(2);
     });
 
     it("removes stale copies from the other storage location when writing", async () => {

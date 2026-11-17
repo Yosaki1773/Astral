@@ -165,6 +165,33 @@ describe("recordService (node, real db)", () => {
         delete process.env.RECORD_LOG_ENABLED;
     });
 
+    it("publishes partial replies without changing status, billing or the request payload", async () => {
+        const record = await recordService.create(1, 1, '{"q":1}');
+        await recordService.update(Number(record.id), { status: SgRecordStatus.PROCESSING });
+        await recordService.updateResponsePayload(Number(record.id), '{"choices":[{"message":{"content":"partial"}}]}');
+        const partial = await SgRecord.query().find(Number(record.id));
+        await recordService.attachPayload(partial!);
+        expect(partial!.status).toBe(SgRecordStatus.PROCESSING);
+        expect(partial!.end_at).toBeNull();
+        expect(partial!.cost).toBe(0);
+        expect(partial!.request_data).toBe('{"q":1}');
+        expect(JSON.parse(partial!.response_data!).choices[0].message.content).toBe("partial");
+
+        await recordService.update(Number(record.id), {
+            response_data: '{"choices":[{"message":{"content":"complete"}}]}',
+            status: SgRecordStatus.SUCCESS,
+        });
+        expect((await getStoredPayload(Number(record.id))).response)
+            .toBe('{"choices":[{"message":{"content":"complete"}}]}');
+    });
+
+    it("does not publish partial replies when payload recording is disabled", async () => {
+        await configService.setValue(ConfigKey.RECORD_PAYLOAD_ENABLED, "false");
+        const record = await recordService.create(1, 1, "request");
+        await recordService.updateResponsePayload(Number(record.id), "partial reply");
+        expect(await getStoredPayload(Number(record.id))).toBeNull();
+    });
+
     it("skips storage write on create when payload recording is disabled", async () => {
         await configService.setValue(ConfigKey.RECORD_PAYLOAD_ENABLED, "false");
 

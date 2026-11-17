@@ -37,6 +37,7 @@ interface StreamRunResult {
 
 
 interface RunSSELoopOptions {
+    recordId: number;
     accumulator: AccumulatorBase;
     converter: BaseConverter | null;
 }
@@ -107,6 +108,17 @@ async function runSSELoop(
         upstreamReader.cancel().catch(() => {});
     });
 
+    // 每秒最多发布一次已生成回复，不逐 token 写库；写入不阻塞客户端转发。
+    let previewDirty = false;
+    let previewWrite: Promise<void> | null = null;
+    const previewTimer = setInterval(() => {
+        if (!previewDirty || previewWrite || accumulator.isCompleted() || accumulator.isErrored()) return;
+        previewDirty = false;
+        previewWrite = recordService.updateResponsePayload(opts.recordId, JSON.stringify(accumulator.getResponse()))
+            .catch(error => console.error("[responseHandlerService] Failed to save reply preview:", error))
+            .finally(() => { previewWrite = null; });
+    }, 1000);
+
     // 投递一组客户端事件：先喂旁路累加器（只记录流状态供收尾判定成败，不决定是否转发 ——
     // 上游的错误事件因此会照常下发，客户端能看到错误详情，而不是只等到一条被截断的流，
     // HTTP 已是 200，SSE 体是唯一的错误通道），再写 SSE。主循环与 EOF 收尾共用。
@@ -115,6 +127,7 @@ async function runSSELoop(
             if (!clientEvent.data) continue;
 
             accumulator.addEvent(clientEvent);
+            previewDirty = true;
             if (accumulator.isErrored()) {
                 markFailure(accumulator.isParseFailed() ? FailedCode.SSE_PARSE_ERROR : FailedCode.UPSTREAM_ERROR, null);
             }
@@ -185,6 +198,9 @@ async function runSSELoop(
         }
     }
 
+    clearInterval(previewTimer);
+    // 等待已启动的快照写入，防止它在最终落库后回写旧的部分回复。
+    if (previewWrite) await previewWrite;
     unsubscribeClientAbort();
     return { accumulator, failedCode, errorMessage };
 }
@@ -438,6 +454,7 @@ export async function handleStreamResponse(
 
     return streamSSE(c, async (stream: SSEStreamingApi) => {
         const state = await runSSELoop(c, upstreamRes, stream, logStream, {
+            recordId: Number(record.id),
             accumulator,
             converter,
         });

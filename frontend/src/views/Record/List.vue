@@ -90,16 +90,22 @@
             :records="recordStore.records"
             :loading="recordStore.loading"
             :pagination="pagination"
+            selectable
+            :selected-record-id="selectedPreviewRecord?.id"
+            @select="handleRecordSelect"
             @change="handleTableChange"
         />
+        <RecordReplyPreview :record="selectedPreviewRecord" />
     </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useAutoRefresh } from '@/composables/useAutoRefresh';
 import { useRecordTable } from '@/composables/useRecordTable';
 import RecordTable from '@/components/common/RecordTable.vue';
+import RecordReplyPreview from '@/components/common/RecordReplyPreview.vue';
+import type { Record } from '@/types/record';
 import { useDirectoryStore } from '@/stores/directory';
 import { useAppStore } from '@/stores/app';
 import { RunMode } from '@/types/system';
@@ -137,6 +143,19 @@ const {
     handleTableChange,
     handleDateChange,
 } = useRecordTable();
+
+const selectedPreviewRecord = ref<Record | null>(null);
+
+function handleRecordSelect(record: Record): void {
+    selectedPreviewRecord.value = record.status === 'success' || record.status === 'processing' ? record : null;
+}
+
+watch(() => recordStore.records, records => {
+    if (!selectedPreviewRecord.value) return;
+    const selected = records.find(record => record.id === selectedPreviewRecord.value!.id);
+    if (selected) handleRecordSelect(selected);
+    else selectedPreviewRecord.value = null;
+});
 
 // worker 模式下 D1 写入配额紧张：默认关闭自动刷新、且把间隔改回 30 秒
 // node 模式保持原有行为：默认开启、5 秒刷新一次
@@ -226,5 +245,10 @@ function handleAutoRefreshChange(checked: boolean) {
 .refresh-hint {
     font-size: 12px;
     color: var(--text-secondary);
+}
+
+.record-list :deep(.ant-table-tbody > tr.ant-table-row > td) {
+    padding-top: 4px;
+    padding-bottom: 4px;
 }
 </style>

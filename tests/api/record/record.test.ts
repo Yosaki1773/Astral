@@ -267,8 +267,9 @@ describe("Record API", () => {
         let keywordVendorId: number;
         let modelAName: string;
         let modelBName: string;
-        const REQUEST_KEYWORD = "Hello";
-        const RESPONSE_KEYWORD = "Hello"; // mock server 回复内容也含 "Hello!"
+        let keywordRecordIds: number[];
+        const REQUEST_KEYWORD = "RequestOnlyNeedle";
+        const RESPONSE_KEYWORD = "mock AI assistant"; // 只在 mock 回复中出现，不存在于请求中
 
         beforeAll(async () => {
             // 使用随机名称避免与其他测试的模型名冲突（modelService.getModel 按名字查找取第一条）
@@ -296,16 +297,19 @@ describe("Record API", () => {
             modelAId = modelA.body.id;
             modelBId = modelB.body.id;
 
+            const messages = [{ role: "user", content: REQUEST_KEYWORD }];
             // userA × modelA: 2 requests
-            await requestHelper.post("/llm/v1/chat/completions", mockHelper.generateOpenAIChatRequest({ model: modelAName, stream: false }), userAToken);
-            await requestHelper.post("/llm/v1/chat/completions", mockHelper.generateOpenAIChatRequest({ model: modelAName, stream: false }), userAToken);
+            await requestHelper.post("/llm/v1/chat/completions", mockHelper.generateOpenAIChatRequest({ model: modelAName, messages, stream: false }), userAToken);
+            await requestHelper.post("/llm/v1/chat/completions", mockHelper.generateOpenAIChatRequest({ model: modelAName, messages, stream: false }), userAToken);
             // userA × modelB: 1 request
-            await requestHelper.post("/llm/v1/chat/completions", mockHelper.generateOpenAIChatRequest({ model: modelBName, stream: false }), userAToken);
+            await requestHelper.post("/llm/v1/chat/completions", mockHelper.generateOpenAIChatRequest({ model: modelBName, messages, stream: false }), userAToken);
             // userB × modelA: 1 request
-            await requestHelper.post("/llm/v1/chat/completions", mockHelper.generateOpenAIChatRequest({ model: modelAName, stream: false }), userBToken);
+            await requestHelper.post("/llm/v1/chat/completions", mockHelper.generateOpenAIChatRequest({ model: modelAName, messages, stream: false }), userBToken);
 
             // 等所有记录 finalize（status 不再 processing）
-            await requestHelper.getFinalizedRecords(adminToken, 20, 5000);
+            const records = await requestHelper.getFinalizedRecords(adminToken, 20, 5000);
+            keywordRecordIds = records.filter((r: any) => [userAId, userBId].includes(r.user_id)).map((r: any) => r.id);
+            expect(keywordRecordIds).toHaveLength(4);
         });
 
         it("should match keyword in request body (case-insensitive)", async () => {
@@ -315,7 +319,13 @@ describe("Record API", () => {
             );
 
             expect(res.status).toBe(200);
-            expect(res.body.list.length).toBeGreaterThan(0);
+            expect(res.body.total).toBe(4);
+            expect(res.body.list.map((r: any) => r.id)).toEqual(keywordRecordIds);
+            for (const id of keywordRecordIds) {
+                const detail = await requestHelper.get(`/record/${id}`, adminToken);
+                expect(detail.body.request_data).toContain(REQUEST_KEYWORD);
+                expect(detail.body.response_data).not.toContain(REQUEST_KEYWORD);
+            }
         });
 
         it("should be case-insensitive (uppercase needle finds lowercase content)", async () => {
@@ -332,14 +342,20 @@ describe("Record API", () => {
             expect(upperRes.body.total).toBe(res.body.total);
         });
 
-        it("should match keyword in response body", async () => {
+        it("should match keyword only present in response body", async () => {
             const res = await requestHelper.get(
-                `/record/list.json?keyword=${encodeURIComponent(RESPONSE_KEYWORD)}`,
+                `/record/list.json?keyword=${encodeURIComponent(RESPONSE_KEYWORD)}&user_ids=${userAId},${userBId}`,
                 adminToken,
             );
 
             expect(res.status).toBe(200);
-            expect(res.body.list.length).toBeGreaterThan(0);
+            expect(res.body.total).toBe(4);
+            expect(res.body.list.map((r: any) => r.id)).toEqual(keywordRecordIds);
+            for (const id of keywordRecordIds) {
+                const detail = await requestHelper.get(`/record/${id}`, adminToken);
+                expect(detail.body.request_data).not.toContain(RESPONSE_KEYWORD);
+                expect(detail.body.response_data).toContain(RESPONSE_KEYWORD);
+            }
         });
 
         it("should return empty list when keyword matches nothing", async () => {
@@ -395,12 +411,95 @@ describe("Record API", () => {
 
             expect(page1.status).toBe(200);
             expect(page2.status).toBe(200);
-            expect(page1.body.list.length).toBeLessThanOrEqual(2);
-            expect(page2.body.list.length).toBeLessThanOrEqual(2);
+            expect(page1.body.total).toBe(4);
+            expect(page2.body.total).toBe(4);
+            expect(page1.body.list).toHaveLength(2);
+            expect(page2.body.list).toHaveLength(2);
 
             const ids1 = page1.body.list.map((r: any) => r.id);
             const ids2 = page2.body.list.map((r: any) => r.id);
-            expect(ids1.some((id: number) => ids2.includes(id))).toBe(false);
+            expect([...ids1, ...ids2]).toEqual(keywordRecordIds);
+        });
+
+        it("should trim surrounding whitespace and ignore whitespace-only keywords", async () => {
+            const trimmed = await requestHelper.get(
+                `/record/list.json?keyword=${encodeURIComponent(`  ${REQUEST_KEYWORD}  `)}`,
+                adminToken,
+            );
+            const blank = await requestHelper.get(`/record/list.json?keyword=${encodeURIComponent("   ")}`, adminToken);
+            const all = await requestHelper.get("/record/list.json", adminToken);
+
+            expect(trimmed.status).toBe(200);
+            expect(trimmed.body.list.map((r: any) => r.id)).toEqual(keywordRecordIds);
+            expect(blank.status).toBe(200);
+            expect(blank.body.total).toBe(all.body.total);
+        });
+
+        it("should combine keyword with status and time filters", async () => {
+            const failed = await requestHelper.get(
+                `/record/list.json?keyword=${REQUEST_KEYWORD}&status=failed`,
+                adminToken,
+            );
+            const future = await requestHelper.get(
+                `/record/list.json?keyword=${REQUEST_KEYWORD}&start_time=${encodeURIComponent("2099-01-01 00:00:00")}`,
+                adminToken,
+            );
+
+            expect(failed.status).toBe(200);
+            expect(failed.body.total).toBe(0);
+            expect(failed.body.list).toEqual([]);
+            expect(future.status).toBe(200);
+            expect(future.body.total).toBe(0);
+            expect(future.body.list).toEqual([]);
+        });
+
+        it("should match decoded Chinese, quotes, backslashes and newlines in request content", async () => {
+            const content = '检索 "特殊内容"\nC:\\Users\\search';
+            const response = await requestHelper.post(
+                "/llm/v1/chat/completions",
+                mockHelper.generateOpenAIChatRequest({
+                    model: modelAName,
+                    messages: [{ role: "user", content }],
+                    stream: false,
+                }),
+                userAToken,
+            );
+            expect(response.status).toBe(200);
+            const [record] = await requestHelper.getFinalizedRecords(adminToken, 1);
+            expect(JSON.parse(record.request_data).messages[0].content).toBe(content);
+
+            for (const keyword of ["特殊内容", '检索 "特殊内容"', String.raw`C:\Users\search`, '"特殊内容"\nC:']) {
+                const result = await requestHelper.get(
+                    `/record/list.json?keyword=${encodeURIComponent(keyword)}`,
+                    adminToken,
+                );
+                expect(result.status).toBe(200);
+                expect(result.body.total).toBe(1);
+                expect(result.body.list.map((r: any) => r.id)).toEqual([record.id]);
+            }
+        });
+
+        it("should match reply text spanning multiple streaming deltas", async () => {
+            const response = await requestHelper.post(
+                "/llm/v1/chat/completions",
+                mockHelper.generateOpenAIChatRequest({
+                    model: modelAName,
+                    messages: [{ role: "user", content: "StreamRequestOnly" }],
+                    stream: true,
+                }),
+                userAToken,
+            );
+            expect(response.status).toBe(200);
+            const [record] = await requestHelper.getFinalizedRecords(adminToken, 1);
+            expect(record.request_data).not.toContain(RESPONSE_KEYWORD);
+            expect(record.response_data).toContain(RESPONSE_KEYWORD);
+
+            const result = await requestHelper.get(
+                `/record/list.json?keyword=${encodeURIComponent(RESPONSE_KEYWORD)}&user_ids=${userAId}`,
+                adminToken,
+            );
+            expect(result.status).toBe(200);
+            expect(result.body.list.map((r: any) => r.id)).toContain(record.id);
         });
     });
 

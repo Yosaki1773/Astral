@@ -99,12 +99,12 @@
                 <div class="settings-row">
                     <label class="settings-label">跳过 TLS 验证</label>
                     <a-switch v-model:checked="formState.skip_tls_verify" />
-                    <span style="margin-left: 8px; color: #999; font-size: 12px;">当使用自签名证书等场景时使用</span>
+                    <span class="settings-hint">当使用自签名证书等场景时使用</span>
                 </div>
                 <div class="settings-row">
                     <label class="settings-label">自定义 User-Agent</label>
                     <a-switch v-model:checked="formState.user_agent_enabled" />
-                    <span style="margin-left: 8px; color: #999; font-size: 12px;">开启后请求上游时携带该 User-Agent</span>
+                    <span class="settings-hint">开启后请求上游时携带该 User-Agent</span>
                 </div>
                 <div class="settings-row" v-if="formState.user_agent_enabled">
                     <label class="settings-label">User-Agent</label>
@@ -349,5 +349,11 @@ defineExpose({ open });
 .auth-hint {
     color: #8c8c8c;
     font-size: 12px;
+}
+
+.settings-hint {
+    margin-left: 8px;
+    font-size: 12px;
+    color: var(--text-secondary, #8c8c8c);
 }
 </style>

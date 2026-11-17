@@ -368,7 +368,7 @@ defineExpose({ openVendorTest, openModelTest });
 
 .hint-text {
     font-size: 12px;
-    color: #8c8c8c;
+    color: var(--text-secondary, #8c8c8c);
     margin-top: 4px;
 }
 
@@ -378,7 +378,7 @@ defineExpose({ openVendorTest, openModelTest });
     gap: 6px;
     margin-bottom: 16px;
     padding: 10px 12px;
-    background: #f5f5f5;
+    background: var(--bg-info-item, #f5f5f5);
     border-radius: 6px;
 }
 
@@ -390,7 +390,7 @@ defineExpose({ openVendorTest, openModelTest });
 }
 
 .info-label {
-    color: #8c8c8c;
+    color: var(--text-secondary, #8c8c8c);
     white-space: nowrap;
     flex-shrink: 0;
 }
@@ -400,7 +400,7 @@ defineExpose({ openVendorTest, openModelTest });
 }
 
 .info-value {
-    color: #262626;
+    color: var(--text-primary, #262626);
     word-break: break-all;
 }
 
@@ -411,7 +411,7 @@ defineExpose({ openVendorTest, openModelTest });
 .result-summary {
     margin-bottom: 16px;
     padding: 12px;
-    background: #f6f8fa;
+    background: var(--bg-info-item, #f6f8fa);
     border-radius: 4px;
 }
 
@@ -428,7 +428,7 @@ defineExpose({ openVendorTest, openModelTest });
 }
 
 .status-code, .duration {
-    color: #8c8c8c;
+    color: var(--text-secondary, #8c8c8c);
     font-size: 13px;
     margin-left: 8px;
 }
@@ -447,7 +447,7 @@ defineExpose({ openVendorTest, openModelTest });
 }
 
 .convert-hint {
-    color: #8c8c8c;
+    color: var(--text-secondary, #8c8c8c);
     font-size: 12px;
 }
 
@@ -466,19 +466,19 @@ defineExpose({ openVendorTest, openModelTest });
 .result-convert {
     margin-top: 4px;
     font-size: 12px;
-    background: #f0f2f5;
+    background: var(--bg-info-item, #f0f2f5);
     padding: 4px 8px;
     border-radius: 4px;
 }
 
 .convert-label {
-    color: #8c8c8c;
+    color: var(--text-secondary, #8c8c8c);
     margin-right: 8px;
     font-weight: 500;
 }
 
 .convert-text {
-    color: #1677ff;
+    color: var(--accent-primary, #1677ff);
     font-family: monospace;
 }
 
@@ -486,19 +486,19 @@ defineExpose({ openVendorTest, openModelTest });
     margin-top: 4px;
     font-size: 12px;
     word-break: break-all;
-    background: #f0f2f5;
+    background: var(--bg-info-item, #f0f2f5);
     padding: 4px 8px;
     border-radius: 4px;
 }
 
 .url-label {
-    color: #8c8c8c;
+    color: var(--text-secondary, #8c8c8c);
     margin-right: 8px;
     font-weight: 500;
 }
 
 .url-text {
-    color: #595959;
+    color: var(--text-secondary, #595959);
     font-family: monospace;
 }
 
@@ -506,19 +506,19 @@ defineExpose({ openVendorTest, openModelTest });
     margin-top: 4px;
     font-size: 12px;
     word-break: break-all;
-    background: #f0f2f5;
+    background: var(--bg-info-item, #f0f2f5);
     padding: 4px 8px;
     border-radius: 4px;
 }
 
 .proxy-label {
-    color: #8c8c8c;
+    color: var(--text-secondary, #8c8c8c);
     margin-right: 8px;
     font-weight: 500;
 }
 
 .proxy-text {
-    color: #1677ff;
+    color: var(--accent-primary, #1677ff);
     font-family: monospace;
 }
 
@@ -528,7 +528,7 @@ defineExpose({ openVendorTest, openModelTest });
 
 .detail-label {
     font-size: 13px;
-    color: #8c8c8c;
+    color: var(--text-secondary, #8c8c8c);
     margin-bottom: 8px;
 }
 

@@ -43,6 +43,8 @@ html.dark body {
 }
 
 /* Light 模式 */
+/* 变量同时定义在 :root 上：Modal/Dropdown 等弹层会传送到 body 渲染，不在 .app-container 内 */
+:root,
 .app-container.light {
     --bg-layout: #f0f2f5;
     --bg-header: #ffffff;
@@ -101,6 +103,7 @@ html.dark body {
 }
 
 /* Dark 模式 */
+html.dark,
 .app-container.dark {
     --bg-layout: #141414;
     --bg-header: #1f1f1f;

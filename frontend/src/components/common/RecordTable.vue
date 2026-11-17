@@ -8,6 +8,8 @@
         @change="handleTableChange"
         :row-key="(record: Record) => record.id"
         :scroll="{ x: 'max-content' }"
+        :custom-row="getRowProps"
+        :row-class-name="getRowClass"
     >
         <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'status'">
@@ -93,6 +95,8 @@ interface Props {
     pagination?: false | TablePaginationConfig;
     size?: 'small' | 'middle' | 'default';
     columns?: TableColumnsType<Record>;
+    selectable?: boolean;
+    selectedRecordId?: number | null;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -103,6 +107,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
     change: [pagination: TablePaginationConfig];
+    select: [record: Record];
 }>();
 
 const router = useRouter();
@@ -126,6 +131,29 @@ const displayColumns = computed(() => {
 
 function handleTableChange(pag: TablePaginationConfig) {
     emit('change', pag);
+}
+
+function getRowClass(record: Record): string {
+    if (!props.selectable) return '';
+    return record.id === props.selectedRecordId ? 'record-preview-row record-preview-selected' : 'record-preview-row';
+}
+
+function getRowProps(record: Record) {
+    if (!props.selectable) return {};
+    return {
+        tabindex: 0,
+        'aria-selected': record.id === props.selectedRecordId,
+        onClick: (event: MouseEvent) => {
+            if ((event.target as HTMLElement).closest('button, a')) return;
+            emit('select', record);
+        },
+        onKeydown: (event: KeyboardEvent) => {
+            if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+                event.preventDefault();
+                emit('select', record);
+            }
+        },
+    };
 }
 
 function handleView(record: Record) {
@@ -229,6 +257,19 @@ function getStatusText(status: string | null, failedCode?: string | null): strin
 </script>
 
 <style scoped>
+:deep(.record-preview-row) {
+    cursor: pointer;
+}
+
+:deep(.ant-table-tbody > tr.record-preview-selected > td) {
+    background: var(--bg-info-item);
+}
+
+:deep(.record-preview-row:focus-visible) {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: -2px;
+}
+
 .metric-cell {
     line-height: 1.4;
 }

@@ -518,10 +518,7 @@
                     v-if="assistantReplyText"
                     class="assistant-markdown-body"
                   >
-                    <div
-                      class="rendered-markdown"
-                      v-html="renderMarkdown(assistantReplyText)"
-                    ></div>
+                    <ReplyMarkdown :content="assistantReplyText" />
                   </div>
                   <div
                     v-else-if="!recordStore.currentRecord.response_data"
@@ -784,6 +781,8 @@ import DataViewer from "@/components/dataViewer/DataViewer.vue";
 import ActivityTimeline from "@/components/common/ActivityTimeline.vue";
 import { FAILED_CODE_LABELS } from "@/constants/record";
 import { message } from "ant-design-vue/es";
+import ReplyMarkdown from "@/components/common/ReplyMarkdown.vue";
+import recordReply from "@/utils/recordReply";
 import { marked } from "marked";
 
 // 配置 marked 安全选项
@@ -961,51 +960,7 @@ const parsedResponseObj = computed<any>(() => {
 });
 
 // 提取 Assistant 最终回复文本
-const assistantReplyText = computed<string | null>(() => {
-  const res = parsedResponseObj.value;
-  if (!res) return null;
-
-  // OpenAI 格式
-  if (Array.isArray(res.choices) && res.choices.length > 0) {
-    const choice = res.choices[0];
-    if (choice.message?.content) {
-      return typeof choice.message.content === "string"
-        ? choice.message.content
-        : JSON.stringify(choice.message.content, null, 2);
-    }
-    if (choice.delta?.content) {
-      return choice.delta.content;
-    }
-  }
-
-  // Anthropic / Responses 格式
-  if (Array.isArray(res.content)) {
-    return res.content
-      .map((c: any) =>
-        typeof c === "string" ? c : c.text || JSON.stringify(c),
-      )
-      .join("\n");
-  }
-
-  if (res.output && Array.isArray(res.output)) {
-    const converted = convertResponsesResponse(res);
-    if (converted.length > 0) {
-      return converted
-        .map((m: any) =>
-          typeof m.content === "string" ? m.content : JSON.stringify(m.content),
-        )
-        .join("\n");
-    }
-  }
-
-  if (res.message?.content) {
-    return typeof res.message.content === "string"
-      ? res.message.content
-      : JSON.stringify(res.message.content, null, 2);
-  }
-
-  return null;
-});
+const assistantReplyText = computed(() => recordReply.getReplyText(recordStore.currentRecord?.response_data ?? null));
 
 // 提取响应元数据
 const parsedResponseMeta = computed(() => {
@@ -1116,15 +1071,6 @@ const sseStreamText = computed(() => {
   chunks.push("event: message\ndata: [DONE]\n");
   return chunks.join("\n");
 });
-
-function renderMarkdown(content: string): string {
-  if (!content) return "";
-  try {
-    return marked.parse(content) as string;
-  } catch {
-    return `<p>${content}</p>`;
-  }
-}
 
 function getStatusBadgeText(status: string | null | undefined): string {
   switch (status) {
@@ -2256,84 +2202,6 @@ async function downloadJson(data: string | null, type: "request" | "response") {
   background-color: var(--bg-layout);
   border: 1px solid var(--border-color);
   font-size: 11px;
-  color: var(--text-secondary);
-}
-
-/* Markdown 渲染样式规范 */
-.rendered-markdown {
-  font-size: 12.5px;
-  line-height: 1.65;
-  color: var(--text-primary);
-}
-
-.rendered-markdown :deep(h1),
-.rendered-markdown :deep(h2),
-.rendered-markdown :deep(h3),
-.rendered-markdown :deep(h4) {
-  color: var(--text-primary);
-  font-weight: 700;
-  margin-top: 12px;
-  margin-bottom: 6px;
-}
-
-.rendered-markdown :deep(h1) {
-  font-size: 15px;
-}
-.rendered-markdown :deep(h2) {
-  font-size: 14px;
-}
-.rendered-markdown :deep(h3) {
-  font-size: 13px;
-}
-.rendered-markdown :deep(h4) {
-  font-size: 12.5px;
-}
-
-.rendered-markdown :deep(p) {
-  margin-top: 0;
-  margin-bottom: 8px;
-}
-
-.rendered-markdown :deep(ul),
-.rendered-markdown :deep(ol) {
-  margin-top: 0;
-  margin-bottom: 8px;
-  padding-left: 20px;
-}
-
-.rendered-markdown :deep(li) {
-  margin-bottom: 4px;
-}
-
-.rendered-markdown :deep(code) {
-  font-family: "JetBrains Mono", "Fira Code", monospace;
-  font-size: 11.5px;
-  background-color: var(--bg-info-item);
-  color: var(--text-primary);
-  padding: 2px 5px;
-  border-radius: 4px;
-}
-
-.rendered-markdown :deep(pre) {
-  background-color: var(--bg-code-header);
-  padding: 12px 14px;
-  border-radius: 8px;
-  overflow-x: auto;
-  margin: 10px 0;
-}
-
-.rendered-markdown :deep(pre code) {
-  background-color: transparent;
-  color: var(--text-primary);
-  padding: 0;
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.rendered-markdown :deep(blockquote) {
-  margin: 8px 0;
-  padding-left: 12px;
-  border-left: 3px solid var(--border-color);
   color: var(--text-secondary);
 }
 

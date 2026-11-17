@@ -202,16 +202,10 @@ async function deleteByPrefix(prefix: string): Promise<number> {
 }
 
 
-/**
- * 列出指定前缀下所有对象的 key（不读取数据）。
- * 双后端：R2 用 bucket.list 走元数据分页；DB 用 storageManager.listKeysByPrefix 只 select 主键列。
- */
-async function listKeysByPrefix(prefix: string): Promise<string[]> {
-    assertValidPrefix(prefix);
-
-    const location = await resolveStorageLocation();
-    assertLocationAvailable(location);
-
+async function listKeysByPrefixFromLocation(
+    location: RecordPayloadStorage.DATABASE | RecordPayloadStorage.R2,
+    prefix: string,
+): Promise<string[]> {
     if (location === RecordPayloadStorage.R2) {
         const bucket = getWorkerBucket();
         const keys: string[] = [];
@@ -227,6 +221,28 @@ async function listKeysByPrefix(prefix: string): Promise<string[]> {
     }
 
     return storageManager.listKeysByPrefix(prefix);
+}
+
+
+/**
+ * 列出指定前缀下所有可读取对象的 key（不读取数据），合并主存储与回退存储并去重。
+ * R2 用 bucket.list 走元数据分页；DB 只 select 主键列，与 get 的双后端读取范围一致。
+ */
+async function listKeysByPrefix(prefix: string): Promise<string[]> {
+    assertValidPrefix(prefix);
+
+    const location = await resolveStorageLocation();
+    assertLocationAvailable(location);
+    const keys = new Set(await listKeysByPrefixFromLocation(location, prefix));
+
+    const fallback = alternateStorageLocation(location);
+    if (isLocationAvailable(fallback)) {
+        for (const key of await listKeysByPrefixFromLocation(fallback, prefix)) {
+            keys.add(key);
+        }
+    }
+
+    return [...keys];
 }
 
 

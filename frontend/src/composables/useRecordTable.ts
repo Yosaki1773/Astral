@@ -1,8 +1,8 @@
-import { reactive, ref } from 'vue';
+import { storeToRefs } from 'pinia';
 import type { TablePaginationConfig } from 'ant-design-vue';
 import type { Dayjs } from 'dayjs';
 import { useRecordStore } from '@/stores/record';
-import type { TablePaginationState } from '@/types';
+import recordTableState from '@/stores/recordTable';
 import type { RecordQuery, RequestStatus } from '@/types/record';
 
 export interface RecordSearchForm {
@@ -14,29 +14,11 @@ export interface RecordSearchForm {
     keyword?: string;
 }
 
-const DEFAULT_PAGE_SIZE = 10;
-
 export function useRecordTable() {
     const recordStore = useRecordStore();
-    const dateRange = ref<[Dayjs, Dayjs] | null>(null);
-
-    const searchForm = reactive<RecordSearchForm>({
-        status: undefined,
-        user_ids: undefined,
-        model_ids: undefined,
-        start_time: undefined,
-        end_time: undefined,
-        keyword: undefined,
-    });
-
-    const pagination = reactive<TablePaginationState>({
-        current: 1,
-        pageSize: DEFAULT_PAGE_SIZE,
-        total: 0,
-        showSizeChanger: true,
-        showQuickJumper: true,
-        pageSizeOptions: ['10', '20', '50', '100'],
-    });
+    const recordTableStore = recordTableState.useRecordTableStore();
+    const { searchForm, pagination } = recordTableStore;
+    const { dateRange } = storeToRefs(recordTableStore);
 
     function buildQuery(): RecordQuery {
         return {
@@ -53,20 +35,6 @@ export function useRecordTable() {
         pagination.total = result.total;
     }
 
-    function resetSearchForm(): void {
-        searchForm.status = undefined;
-        searchForm.user_ids = undefined;
-        searchForm.model_ids = undefined;
-        searchForm.start_time = undefined;
-        searchForm.end_time = undefined;
-        searchForm.keyword = undefined;
-    }
-
-    function resetPagination(): void {
-        pagination.current = 1;
-        pagination.pageSize = DEFAULT_PAGE_SIZE;
-    }
-
     function handleSearch(): void {
         pagination.current = 1;
         recordStore.clearRecords();
@@ -74,9 +42,7 @@ export function useRecordTable() {
     }
 
     function handleReset(): void {
-        resetSearchForm();
-        dateRange.value = null;
-        resetPagination();
+        recordTableStore.reset();
         recordStore.clearRecords();
         void loadData();
     }
