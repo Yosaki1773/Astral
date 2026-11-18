@@ -1,7 +1,8 @@
 import { storeToRefs } from 'pinia';
+import { computed } from 'vue';
 import type { TablePaginationConfig } from 'ant-design-vue';
 import type { Dayjs } from 'dayjs';
-import { useRecordStore } from '@/stores/record';
+import { useRecordStore, type RecordListFetchOptions } from '@/stores/record';
 import recordTableState from '@/stores/recordTable';
 import type { RecordQuery, RequestStatus } from '@/types/record';
 
@@ -19,6 +20,16 @@ export function useRecordTable() {
     const recordTableStore = recordTableState.useRecordTableStore();
     const { searchForm, pagination } = recordTableStore;
     const { dateRange } = storeToRefs(recordTableStore);
+    // 保留旧结果时，分页也展示该次成功查询，不能用新页码标记旧数据。
+    const displayPagination = computed(() => {
+        const query = recordStore.lastSuccessfulQuery;
+        return query ? {
+            ...pagination,
+            current: query.page ?? 1,
+            pageSize: query.pageSize ?? 10,
+            total: recordStore.total,
+        } : pagination;
+    });
 
     function buildQuery(): RecordQuery {
         return {
@@ -30,20 +41,22 @@ export function useRecordTable() {
         };
     }
 
-    async function loadData(): Promise<void> {
-        const result = await recordStore.fetchRecords(buildQuery());
-        pagination.total = result.total;
+    async function loadData(options?: RecordListFetchOptions): Promise<void> {
+        const result = await recordStore.fetchRecords(buildQuery(), options);
+        if (result.status === 'success') {
+            pagination.total = result.total;
+        }
     }
 
     function handleSearch(): void {
         pagination.current = 1;
-        recordStore.clearRecords();
         void loadData();
     }
 
     function handleReset(): void {
+        const total = pagination.total;
         recordTableStore.reset();
-        recordStore.clearRecords();
+        pagination.total = total;
         void loadData();
     }
 
@@ -68,6 +81,7 @@ export function useRecordTable() {
         recordStore,
         searchForm,
         pagination,
+        displayPagination,
         dateRange,
         loadData,
         handleSearch,

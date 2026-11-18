@@ -1,11 +1,20 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { listRecords, latestRecords, getRecord, getRecordActivity } from '@/api/record';
 import { getUser } from '@/api/user';
 import { getModel } from '@/api/model';
 import { getVendor } from '@/api/vendor';
 import { useDirectoryStore } from '@/stores/directory';
+import { useAuthStore } from './auth';
+import { useTenantStore } from './tenant';
 import type { Record, RecordQuery, RecordDetail, RecordActivityEntry } from '@/types/record';
+
+export interface RecordListFetchOptions {
+    background?: boolean;
+}
+
+type RecordListFetchResult = { status: 'success'; total: number }
+    | { status: 'failed' | 'stale' | 'skipped' };
 
 
 export const useRecordStore = defineStore('record', () => {
@@ -15,6 +24,12 @@ export const useRecordStore = defineStore('record', () => {
     const activities = ref<RecordActivityEntry[]>([]);
     const total = ref(0);
     const loading = ref(false);
+    const listFetching = ref(false);
+    const listLoading = ref(false);
+    const listLoadFailed = ref(false);
+    const lastSuccessfulQuery = ref<RecordQuery | null>(null);
+    let listRequestId = 0;
+    let listLoadingTimer: number | null = null;
     /** 详情请求 404（记录确实不存在）才为 true；加载中 / 网络错误不算 */
     const recordNotFound = ref(false);
     /** 详情请求失败（非 404，如网络错误/500）：避免骨架屏无限停留 */
@@ -58,13 +73,42 @@ export const useRecordStore = defineStore('record', () => {
     // Getters
     const hasRecords = computed(() => records.value.length > 0);
 
+    function clearListLoadingTimer(): void {
+        if (listLoadingTimer !== null) {
+            clearTimeout(listLoadingTimer);
+            listLoadingTimer = null;
+        }
+    }
+
     // Actions
-    async function fetchRecords(query?: RecordQuery): Promise<{ total: number }> {
-        beginLoading();
+    async function fetchRecords(query?: RecordQuery, options?: RecordListFetchOptions): Promise<RecordListFetchResult> {
+        if (options?.background && listFetching.value) {
+            return { status: 'skipped' };
+        }
+
+        const requestId = ++listRequestId;
+        const submittedQuery = { ...query };
+        clearListLoadingTimer();
+        listFetching.value = true;
+        listLoading.value = !options?.background;
+        if (options?.background) {
+            listLoadingTimer = window.setTimeout(() => {
+                listLoadingTimer = null;
+                if (requestId === listRequestId) {
+                    listLoading.value = true;
+                }
+            }, LOADING_DELAY_MS);
+        }
+
         try {
-            const response = await listRecords(query);
+            const response = await listRecords(submittedQuery);
+            if (requestId !== listRequestId) {
+                return { status: 'stale' };
+            }
             const fetchedRecords = response.list || [];
             total.value = response.total || 0;
+            lastSuccessfulQuery.value = submittedQuery;
+            listLoadFailed.value = false;
 
             // 先渲染列表再异步补全名称：避免表格等名称请求全部完成才显示数据
             const generation = ++listGeneration;
@@ -73,16 +117,21 @@ export const useRecordStore = defineStore('record', () => {
                 void enrichRecords(fetchedRecords, generation);
             }
 
-            return { total: total.value };
+            return { status: 'success', total: total.value };
         } catch (error) {
+            if (requestId !== listRequestId) {
+                return { status: 'stale' };
+            }
             console.error('获取记录列表失败:', error);
-            const generation = ++listGeneration;
-            records.value = [];
-            total.value = 0;
-            void enrichRecords(records.value, generation);
-            return { total: 0 };
+            // 保留上次成功数据；请求层已提示错误，不为失败的空列表加载目录。
+            listLoadFailed.value = true;
+            return { status: 'failed' };
         } finally {
-            endLoading();
+            if (requestId === listRequestId) {
+                clearListLoadingTimer();
+                listFetching.value = false;
+                listLoading.value = false;
+            }
         }
     }
 
@@ -252,9 +301,24 @@ export const useRecordStore = defineStore('record', () => {
     }
 
     function clearRecords(): void {
+        ++listRequestId;
+        ++listGeneration;
+        clearListLoadingTimer();
+        listFetching.value = false;
+        listLoading.value = false;
+        listLoadFailed.value = false;
+        lastSuccessfulQuery.value = null;
         records.value = [];
         total.value = 0;
     }
+
+    const authStore = useAuthStore();
+    const tenantStore = useTenantStore();
+    watch(
+        [() => authStore.token, () => tenantStore.currentTenantId],
+        clearRecords,
+        { flush: 'sync' },
+    );
 
     return {
         records,
@@ -262,6 +326,10 @@ export const useRecordStore = defineStore('record', () => {
         activities,
         total,
         loading,
+        listFetching,
+        listLoading,
+        listLoadFailed,
+        lastSuccessfulQuery,
         recordNotFound,
         recordLoadFailed,
         hasRecords,

@@ -86,10 +86,25 @@
             </div>
         </div>
 
+        <a-alert
+            v-if="recordStore.listLoadFailed"
+            type="error"
+            show-icon
+            :message="recordStore.lastSuccessfulQuery ? '加载失败，仍显示上次成功结果' : '记录列表加载失败，请重试'"
+            :description="recordStore.lastSuccessfulQuery
+                ? `以下不是本次筛选或翻页结果，仍为上次成功查询的第 ${displayPagination.current} 页。`
+                : '请求未成功，不能据此判断是否有匹配记录。'"
+            style="margin-bottom: 16px;"
+        >
+            <template #action>
+                <a-button size="small" :loading="recordStore.listFetching" @click="retryLoad">重试</a-button>
+            </template>
+        </a-alert>
         <RecordTable
+            v-if="!recordStore.listLoadFailed || recordStore.lastSuccessfulQuery"
             :records="recordStore.records"
-            :loading="recordStore.loading"
-            :pagination="pagination"
+            :loading="recordStore.listLoading"
+            :pagination="displayPagination"
             selectable
             :selected-record-id="selectedPreviewRecord?.id"
             @select="handleRecordSelect"
@@ -135,7 +150,7 @@ async function loadSelectOptions() {
 const {
     recordStore,
     searchForm,
-    pagination,
+    displayPagination,
     dateRange,
     loadData,
     handleSearch,
@@ -143,6 +158,10 @@ const {
     handleTableChange,
     handleDateChange,
 } = useRecordTable();
+
+function retryLoad(): void {
+    void loadData();
+}
 
 const selectedPreviewRecord = ref<Record | null>(null);
 
@@ -168,7 +187,7 @@ const {
     setIntervalValue,
     remainingSeconds,
 } = useAutoRefresh({
-    callback: () => loadData(),
+    callback: () => loadData({ background: true }),
     defaultInterval: 30000,
     immediate: false,
 });
