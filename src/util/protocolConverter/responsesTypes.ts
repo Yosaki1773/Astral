@@ -1,4 +1,5 @@
 import type { ReasoningEffort } from "./thinkingConfig";
+import type { ToolCallSignatureMetadata } from "./protocolTypes";
 
 /**
  * Responses API 请求/响应类型定义
@@ -39,7 +40,7 @@ export interface ResponsesMessageItem {
     content: ResponsesContentPart[] | string;
 }
 
-export interface ResponsesFunctionCallItem {
+export interface ResponsesFunctionCallItem extends ToolCallSignatureMetadata {
     type: "function_call";
     id?: string;
     call_id: string;
@@ -126,7 +127,7 @@ export interface ResponsesOutputMessage {
     }>;
 }
 
-export interface ResponsesOutputFunctionCall {
+export interface ResponsesOutputFunctionCall extends ToolCallSignatureMetadata {
     type: "function_call";
     id: string;
     call_id: string;

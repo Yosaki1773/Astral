@@ -32,19 +32,38 @@ function raceWithTimeout<T>(task: Promise<T>, timeoutMs: number, onTimeout: () =
 
 
 /**
- * 以文本形式读取响应体，受中止信号控制：中止时取消 body 并 reject。
- * Response.text() 不接收 signal，由这里统一处理「中止 → body.cancel()」。
- * 内部原语，供 readTextWithTimeoutAndAbort 使用。
+ * 以文本形式读取响应体，受中止信号控制。
+ * 持有 reader 才能取消已锁定的 body；Response.text() 后再 body.cancel() 会取消失败。
  */
 async function readTextWithSignal(res: Response, signal: AbortSignal): Promise<string> {
+    if (!res.body) {
+        if (signal.aborted) throw new Error("upstream response body aborted");
+        return res.text();
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    async function readText(): Promise<string> {
+        let text = "";
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) return text + decoder.decode();
+                text += decoder.decode(value, { stream: true });
+            }
+        } finally {
+            reader.releaseLock();
+        }
+    }
+
     return new Promise<string>((resolve, reject) => {
         const onAbort = () => {
-            res.body?.cancel().catch(() => {});
+            signal.removeEventListener("abort", onAbort);
+            reader.cancel().catch(() => {});
             reject(new Error("upstream response body aborted"));
         };
-        if (signal.aborted) { onAbort(); return; }
+        if (signal.aborted) { onAbort(); reader.releaseLock(); return; }
         signal.addEventListener("abort", onAbort);
-        res.text().then(
+        readText().then(
             (text) => { signal.removeEventListener("abort", onAbort); resolve(text); },
             (err) => { signal.removeEventListener("abort", onAbort); reject(err); },
         );

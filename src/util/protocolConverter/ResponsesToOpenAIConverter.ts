@@ -110,6 +110,7 @@ export class ResponsesToOpenAIConverter extends BaseConverter {
                             name: item.name,
                             arguments: item.arguments,
                         },
+                        ...protocolConverterUtil.copyToolCallSignatureMetadata(item),
                     });
                 } else if ("role" in item && item.role === "assistant" && pendingToolCalls.length > 0) {
                     // 如果是 message assistant 且有 pendingToolCalls，合并到一起
@@ -206,6 +207,7 @@ export class ResponsesToOpenAIConverter extends BaseConverter {
                         name: item.name,
                         arguments: item.arguments,
                     },
+                    ...protocolConverterUtil.copyToolCallSignatureMetadata(item),
                 }],
             });
             return;
@@ -321,6 +323,7 @@ export class ResponsesToOpenAIConverter extends BaseConverter {
                     name: tc.function.name,
                     arguments: tc.function.arguments,
                     status: "completed",
+                    ...protocolConverterUtil.copyToolCallSignatureMetadata(tc),
                 });
             }
         }

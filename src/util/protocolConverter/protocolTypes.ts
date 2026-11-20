@@ -60,6 +60,14 @@ export type OpenAIContentPart =
     | { type: "text"; text: string }
     | { type: "image_url"; image_url: { url: string; detail?: string } };
 
+export interface ToolCallSignatureMetadata {
+    extra_content?: {
+        google?: { thought_signature?: string; [key: string]: unknown };
+        [key: string]: unknown;
+    };
+    provider_specific_fields?: { thought_signature?: string; [key: string]: unknown };
+}
+
 export interface OpenAIMessage {
     role: "system" | "user" | "assistant" | "tool";
     content?: string | OpenAIContentPart[] | null;
@@ -72,7 +80,7 @@ export interface OpenAIMessage {
             name: string;
             arguments: string;
         };
-    }>;
+    } & ToolCallSignatureMetadata>;
     tool_call_id?: string;
 }
 
@@ -137,7 +145,7 @@ export interface OpenAIResponse {
                     name: string;
                     arguments: string;
                 };
-            }>;
+            } & ToolCallSignatureMetadata>;
         };
         finish_reason: "stop" | "length" | "tool_calls" | "content_filter" | null;
     }>;
@@ -191,7 +199,7 @@ export interface OpenAIChunk {
                     name?: string;
                     arguments?: string;
                 };
-            }>;
+            } & ToolCallSignatureMetadata>;
         };
         finish_reason: string | null;
     }>;

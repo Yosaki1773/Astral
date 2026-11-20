@@ -279,6 +279,21 @@ function finalizeStreamResult(
 // 公开入口
 // ====================================================================
 
+/** 非流式正文读取与失败收尾；sender 预读签名错误时也复用同一超时和断开保护。 */
+async function readNonStreamResponseText(c: Context, upstreamRes: Response, record: SgRecord): Promise<string> {
+    const nonStreamTimeoutMs = await configService.getNumber(ConfigKey.UPSTREAM_NON_STREAM_TIMEOUT_MS);
+    try {
+        return await abortTimeoutUtil.readTextWithTimeoutAndAbort(upstreamRes, nonStreamTimeoutMs, c.req.raw.signal);
+    } catch (e) {
+        const failedCode = abortTimeoutUtil.isTaggedError(e)
+            ? e.failedCode
+            : FailedCode.UPSTREAM_DISCONNECTED;
+        await recordService.markFailed(record.id, failedCode, { response_data: abortTimeoutUtil.describeError(e) });
+        throw e;
+    }
+}
+
+
 /**
  * 非流式响应：各协议通用。协议转换按 converter 是否存在判断，上游 usage 按 upstreamFormat 解析。
  */
@@ -290,22 +305,10 @@ export async function handleNonStreamResponse(
     user: SgUser,
     upstreamFormat: ApiFormat,
     converter: BaseConverter | null = null,
+    preReadText?: string,
 ): Promise<Response> {
-    // 非流式 body 读取兜底：readTextWithTimeoutAndAbort 一次性处理「上游断开 / 超时 / 客户端断开」，
-    // 失败携带失败码及可读诊断，异常时显式把 record 标 FAILED。
-    const nonStreamTimeoutMs = await configService.getNumber(ConfigKey.UPSTREAM_NON_STREAM_TIMEOUT_MS);
-
-    let responseText: string;
-    try {
-        responseText = await abortTimeoutUtil.readTextWithTimeoutAndAbort(upstreamRes, nonStreamTimeoutMs, c.req.raw.signal);
-    } catch (e) {
-        const failedCode = abortTimeoutUtil.isTaggedError(e)
-            ? e.failedCode
-            : FailedCode.UPSTREAM_DISCONNECTED;
-        await recordService.markFailed(record.id, failedCode, { response_data: abortTimeoutUtil.describeError(e) });
-        throw e;
-    }
-
+    // 空正文也是已读值，不能再次消费原 Response。
+    const responseText = preReadText !== undefined ? preReadText : await readNonStreamResponseText(c, upstreamRes, record);
     const statusCode = upstreamRes.status as StatusCode;
 
     if (!upstreamRes.ok) {
@@ -466,6 +469,7 @@ export async function handleStreamResponse(
 
 
 export default {
+    readNonStreamResponseText,
     handleStreamResponse,
     handleNonStreamResponse,
 };

@@ -146,6 +146,21 @@ describe("ResponsesToOpenAIConverter", () => {
             });
         });
 
+        it("preserves Gemini tool-call metadata when converting Responses history to Chat", () => {
+            const request = {
+                model: "alias", input: [{
+                    type: "function_call", call_id: "call-1", name: "weather", arguments: "{}",
+                    extra_content: { google: { thought_signature: "google-signature" } },
+                    provider_specific_fields: { thought_signature: "provider-signature" },
+                }],
+            } as ResponsesRequest;
+            const result = converter.convertRequest(request);
+            expect(result.messages[0].tool_calls![0]).toMatchObject({
+                extra_content: { google: { thought_signature: "google-signature" } },
+                provider_specific_fields: { thought_signature: "provider-signature" },
+            });
+        });
+
         it("should convert function_call_output to tool message", () => {
             const req: ResponsesRequest = {
                 model: "gpt-4",

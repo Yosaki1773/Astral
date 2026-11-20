@@ -5,7 +5,7 @@ import { SgVendor } from "../model/sgVendor";
 import { SgRecord } from "../model/sgRecord";
 import recordService from "./recordService";
 import requestActivityService from "./requestActivityService";
-import { SgRecordStatus, ApiFormat, VendorAuthMode, FailedCode, RequestActivityStage, ActivityLevel, ConfigKey } from "../constants";
+import { SgRecordStatus, ApiFormat, VendorAuthMode, FailedCode, RequestActivityStage, ActivityLevel, ConfigKey, GEMINI_THOUGHT_SIGNATURE_RETRY_LIMIT } from "../constants";
 import pluginService from "./pluginService";
 import hostService from "./hostService";
 import { ConverterFactory } from "../util/protocolConverter/ConverterFactory";
@@ -21,6 +21,7 @@ import abortTimeoutUtil from "../util/abortTimeoutUtil";
 import RoutingContext from "./routingService/routingContext";
 import ruleService from "./ruleService";
 import vendorService from "./vendorService";
+import geminiThoughtSignatureUtil from "../util/protocol/geminiThoughtSignatureUtil";
 
 
 // 可重试的 HTTP 错误响应转成异常，与网络异常汇入同一个失败处理点
@@ -243,85 +244,113 @@ async function sendRequestToUpstream(
         }
     }
 
-    await streamLogService.writeRequestLog(record, upstreamBody);
-
-    // inspect 模式（专用测试接口使用）：把本次（最终命中的）上游实际请求快照注入 c，
-    // 供调用方返回给前端展示。生产路径不带 inspect 标记，此处零开销。
-    if (c.get("inspectUpstream")) {
-        c.set("upstreamRequestSnapshot", {
-            url,
-            method: "POST",
-            headers: sanitizeUpstreamHeaders(finalHeaders),
-            body: upstreamBody,
-            client_format: clientFormat,
-            upstream_format: upstreamFormat,
-            vendor: { id: vendor.id, name: vendor.name },
-            vendor_model_name: vendorModelName,
-            proxy: vendor.config.proxy ?? null,
-        });
-    }
-
-    // 7. 发起上游请求，拿到响应头后立即判断响应类型
-    await requestActivityService.append(recordId, RequestActivityStage.UPSTREAM_ATTEMPT, "发起上游请求", {
-        vendor_id: vendor.id,
-        vendor_name: vendor.name,
-        vendor_model_name: vendorModelName,
-        url,
-        upstream_format: upstreamFormat,
-    });
-
-    // 响应头超时：只约束「连接 + 响应头」阶段；配置值 <= 0 表示关闭超时。
-    // fetch 返回后 dispose 会移除客户端断开监听——body 阶段（流式 / 非流式）由各 handler
-    // 自己的 abort 监听兜底，handler 在注册监听时会先检查信号是否已中断。
     const headersTimeoutMs = await configService.getNumber(ConfigKey.UPSTREAM_HEADERS_TIMEOUT_MS);
-    const clientAbortCtrl = new abortTimeoutUtil.TimeoutAbortController(headersTimeoutMs, c.req.raw.signal);
+    let signatureRetries = 0;
 
-    let upstreamRes: Response;
-    let calledAt: number | undefined;
-    try {
-        // 如果该 vendor 配置了跳过 TLS 验证（内网自签证书场景），注入 undici Agent
-        const dispatcher = await fetchUtil.getDispatcher(vendor.config);
-        calledAt = Date.now();
-        upstreamRes = await fetch(url, {
-            method: "POST",
-            headers: finalHeaders,
-            body: upstreamBody,
-            signal: clientAbortCtrl.signal,
-            // dispatcher 是 undici (Node.js) 特有选项，不在 Cloudflare Workers 的 RequestInit 类型定义中
-            ...(dispatcher ? { dispatcher: dispatcher } as any : {}),
-        });
-    } catch (e) {
-        console.error("Upstream fetch failed:", e);
-        const error = clientAbortCtrl.getTaggedError() ?? abortTimeoutUtil.classifyUpstreamFetchError(e);
-        const errorText = abortTimeoutUtil.describeError(error);
-        await recordService.markFailed(recordId, error.failedCode, {
-            stage: RequestActivityStage.UPSTREAM_ATTEMPT,
-            message: "上游请求失败",
-            level: ActivityLevel.ERROR,
-            response_data: errorText,
-            detail: {
-                vendor_id: vendor.id,
-                vendor_name: vendor.name,
+    // 仅重发最终请求；不重跑插件、转换、准入或路由，不修改下一目标使用的原始 body。
+    while (true) {
+        if (c.req.raw.signal.aborted) {
+            const error = new abortTimeoutUtil.TaggedError(FailedCode.CLIENT_DISCONNECTED, "客户端断开连接，网关已中止上游请求");
+            await recordService.markFailed(recordId, error.failedCode, { response_data: error.message });
+            throw error;
+        }
+
+        await streamLogService.writeRequestLog(record, upstreamBody);
+
+        // inspect 快照始终代表最后实际发送的请求。
+        if (c.get("inspectUpstream")) {
+            c.set("upstreamRequestSnapshot", {
                 url,
-                error: errorText,
-            },
+                method: "POST",
+                headers: sanitizeUpstreamHeaders(finalHeaders),
+                body: upstreamBody,
+                client_format: clientFormat,
+                upstream_format: upstreamFormat,
+                vendor: { id: vendor.id, name: vendor.name },
+                vendor_model_name: vendorModelName,
+                proxy: vendor.config.proxy ?? null,
+            });
+        }
+
+        // 7. 每次实际发送都记录尝试，并独立设置响应头超时。
+        await requestActivityService.append(recordId, RequestActivityStage.UPSTREAM_ATTEMPT, "发起上游请求", {
+            vendor_id: vendor.id,
+            vendor_name: vendor.name,
+            vendor_model_name: vendorModelName,
+            url,
+            upstream_format: upstreamFormat,
+            attempt: signatureRetries + 1,
         });
-        throw error;
-    } finally {
-        clientAbortCtrl.dispose();
-        if (calledAt !== undefined) await vendorService.recordCall(vendor.id, calledAt);
-    }
-    console.log("upstream response status:", upstreamRes.status);
 
-    const isStream =
-        upstreamRes.ok &&
-        upstreamRes.headers.get("content-type")?.startsWith("text/event-stream");
+        // fetch 返回后释放响应头阶段监听；body 阶段由 handler 的读取保护接管。
+        const clientAbortCtrl = new abortTimeoutUtil.TimeoutAbortController(headersTimeoutMs, c.req.raw.signal);
+        let upstreamRes: Response;
+        let calledAt: number | undefined;
+        try {
+            // dispatcher 是 Node.js 的 undici 选项；Worker 不注入。
+            const dispatcher = await fetchUtil.getDispatcher(vendor.config);
+            clientAbortCtrl.signal.throwIfAborted();
+            calledAt = Date.now();
+            upstreamRes = await fetch(url, {
+                method: "POST",
+                headers: finalHeaders,
+                body: upstreamBody,
+                signal: clientAbortCtrl.signal,
+                ...(dispatcher ? { dispatcher: dispatcher } as any : {}),
+            });
+        } catch (e) {
+            console.error("Upstream fetch failed:", e);
+            const error = clientAbortCtrl.getTaggedError() ?? abortTimeoutUtil.classifyUpstreamFetchError(e);
+            const errorText = abortTimeoutUtil.describeError(error);
+            await recordService.markFailed(recordId, error.failedCode, {
+                stage: RequestActivityStage.UPSTREAM_ATTEMPT,
+                message: "上游请求失败",
+                level: ActivityLevel.ERROR,
+                response_data: errorText,
+                detail: {
+                    vendor_id: vendor.id,
+                    vendor_name: vendor.name,
+                    url,
+                    error: errorText,
+                },
+            });
+            throw error;
+        } finally {
+            clientAbortCtrl.dispose();
+            if (calledAt !== undefined) await vendorService.recordCall(vendor.id, calledAt);
+        }
+        console.log("upstream response status:", upstreamRes.status);
 
-    // 8. 按响应类型分发处理（三种协议统一走 responseHandlerService，按 clientFormat 选累加器/解析口径）
-    if (isStream) {
-        return responseHandlerService.handleStreamResponse(c, upstreamRes, record, modelConfig, user, clientFormat, upstreamFormat, converter, expectedChoiceCount);
+        let preReadText: string | undefined;
+        if (upstreamRes.status === 400 && signatureRetries < GEMINI_THOUGHT_SIGNATURE_RETRY_LIMIT) {
+            const repaired = geminiThoughtSignatureUtil.replaceSignatures(upstreamBody, upstreamFormat);
+            if (repaired) {
+                preReadText = await responseHandlerService.readNonStreamResponseText(c, upstreamRes, record);
+                if (geminiThoughtSignatureUtil.isRejectedSignatureError(upstreamRes.status, preReadText)) {
+                    await requestActivityService.append(recordId, RequestActivityStage.UPSTREAM_ATTEMPT, "Gemini 历史签名被拒绝，跳过签名校验后重试", {
+                        vendor_id: vendor.id,
+                        upstream_status: upstreamRes.status,
+                        reason: "rejected_thought_signature",
+                        retry_attempt: signatureRetries + 2,
+                        replaced_signatures: repaired.replacedSignatures,
+                    }, ActivityLevel.WARN);
+                    upstreamBody = repaired.body;
+                    signatureRetries++;
+                    continue;
+                }
+            }
+        }
+
+        const isStream =
+            upstreamRes.ok &&
+            upstreamRes.headers.get("content-type")?.startsWith("text/event-stream");
+
+        // 8. 只将最终响应交给 handler，避免可恢复的 400 提前落为终态失败。
+        if (isStream) {
+            return responseHandlerService.handleStreamResponse(c, upstreamRes, record, modelConfig, user, clientFormat, upstreamFormat, converter, expectedChoiceCount);
+        }
+        return responseHandlerService.handleNonStreamResponse(c, upstreamRes, record, modelConfig, user, upstreamFormat, converter, preReadText);
     }
-    return responseHandlerService.handleNonStreamResponse(c, upstreamRes, record, modelConfig, user, upstreamFormat, converter);
 }
 
 

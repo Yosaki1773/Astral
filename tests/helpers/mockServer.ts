@@ -225,7 +225,9 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
     mockLog(requestMsg);
 
     // Handle different endpoints (more specific paths must come before generic ones)
-    if (url.includes("/chat/completions/stream-error")) {
+    if (url.includes("/chat/completions/gemini-signature/")) {
+        handleGeminiSignatureRequest(req, res);
+    } else if (url.includes("/chat/completions/stream-error")) {
         req.resume();
         res.writeHead(200, { "Content-Type": "text/event-stream" });
         res.end(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: "partial" }, finish_reason: "stop" }] })}\n\ndata: ${JSON.stringify({ error: { code: "server_error", message: "upstream failed after finish" } })}\n\ndata: [DONE]\n\n`);
@@ -257,6 +259,8 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
         handleOpenAIChatBalance(req, res);
     } else if (url.includes("/chat/completions")) {
         handleOpenAIChat(req, res);
+    } else if (url.includes("/responses/gemini-signature/")) {
+        handleGeminiSignatureRequest(req, res);
     } else if (url.includes("/responses/incomplete")) {
         handleResponsesStreamIncomplete(req, res);
     // 注意顺序：/responses/stream-failed-hang 包含 /responses/stream-failed 前缀，必须先匹配
@@ -321,6 +325,57 @@ function handleOpenAIChat(req: IncomingMessage, res: ServerResponse): void {
             const errorMsg = `Error parsing request body: ${e}`;
             console.error(errorMsg);
             mockLog(errorMsg);
+            handleBadRequest(res, "Invalid request body");
+        }
+    });
+}
+
+
+function handleGeminiSignatureRequest(req: IncomingMessage, res: ServerResponse): void {
+    let body = "";
+    req.on("data", chunk => { body += chunk.toString(); });
+    req.on("end", () => {
+        try {
+            const data = JSON.parse(body);
+            captureRequest(req, body, data);
+            const scenario = req.url?.split("/").pop();
+            const isResponses = req.url?.includes("/responses/");
+            const calls = isResponses ? (data.input || []).filter((item: any) => item.type === "function_call")
+                : (data.messages || []).filter((message: any) => message.role === "assistant")
+                    .flatMap((message: any) => message.tool_calls || []);
+            const signatures = calls.flatMap((call: any) => [
+                call.extra_content?.google?.thought_signature,
+                call.provider_specific_fields?.thought_signature,
+                (isResponses ? call.call_id : call.id)?.split("__thought__")[1],
+            ]).filter((signature: any) => typeof signature === "string" && signature.length > 0);
+            const accepted = signatures.length > 0 && signatures.every((signature: string) =>
+                signature === "accepted-signature" || signature === "skip_thought_signature_validator"
+                || signature === Buffer.from("skip_thought_signature_validator").toString("base64"));
+
+            if (!accepted || scenario === "always" || scenario === "ordinary") {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: {
+                    type: "invalid_request_error",
+                    message: scenario === "ordinary" ? "Invalid model" : scenario === "invalid"
+                        ? "Invalid  thought_signature" : "Corrupted thought signature",
+                } }));
+                return;
+            }
+
+            if (isResponses) {
+                const callIds = new Set(calls.map((call: any) => call.call_id));
+                if (data.input.some((item: any) => item.type === "function_call_output" && !callIds.has(item.call_id))) {
+                    handleBadRequest(res, "Tool result has no matching function call");
+                    return;
+                }
+                if (data.stream) handleResponsesStreamResponse(res, data);
+                else handleResponsesNonStreamResponse(res, data);
+            } else if (data.stream) {
+                handleOpenAIStreamResponse(res, data, 5);
+            } else {
+                handleOpenAINonStreamResponse(res, data);
+            }
+        } catch (e) {
             handleBadRequest(res, "Invalid request body");
         }
     });

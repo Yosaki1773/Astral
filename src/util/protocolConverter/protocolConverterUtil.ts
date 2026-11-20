@@ -1,5 +1,5 @@
 import customError from "../../customError";
-import type { AnthropicContentBlock, AnthropicRequest } from "./protocolTypes";
+import type { AnthropicContentBlock, AnthropicRequest, ToolCallSignatureMetadata } from "./protocolTypes";
 import type { ResponsesContentPart } from "./responsesTypes";
 
 
@@ -53,7 +53,17 @@ function anthropicImageSourceFromUrl(url: string): NonNullable<AnthropicContentB
 }
 
 
+/** 保留已知签名承载块，不将其他供应商扩展字段无条件传入另一协议。 */
+function copyToolCallSignatureMetadata(source: ToolCallSignatureMetadata): ToolCallSignatureMetadata {
+    const metadata: ToolCallSignatureMetadata = {};
+    if (typeof source.extra_content?.google?.thought_signature === "string") metadata.extra_content = source.extra_content;
+    if (typeof source.provider_specific_fields?.thought_signature === "string") metadata.provider_specific_fields = source.provider_specific_fields;
+    return metadata;
+}
+
+
 export default {
+    copyToolCallSignatureMetadata,
     appendAnthropicMessage,
     extractResponsesText,
     anthropicImageSourceToUrl,
