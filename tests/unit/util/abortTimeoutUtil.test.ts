@@ -56,6 +56,31 @@ describe("upstream failure diagnostics", () => {
             .rejects.toMatchObject({ failedCode: FailedCode.UPSTREAM_TIMEOUT, message: expect.stringContaining("20ms") });
     });
 
+    it.each(["timeout", "client"])("cancels a locked response body on %s while pre-reading a signature error", async reason => {
+        const cancel = vi.fn();
+        const client = new AbortController();
+        const response = new Response(new ReadableStream({ start() {}, cancel }));
+        const read = abortTimeoutUtil.readTextWithTimeoutAndAbort(response, reason === "timeout" ? 20 : 0, client.signal);
+        const failure = expect(read).rejects.toMatchObject({
+            failedCode: reason === "timeout" ? FailedCode.UPSTREAM_TIMEOUT : FailedCode.CLIENT_DISCONNECTED,
+        });
+        if (reason === "client") client.abort();
+        await failure;
+        expect(cancel).toHaveBeenCalledOnce();
+    });
+
+    it("decodes split UTF-8 bytes and BOM like Response.text() and releases the reader", async () => {
+        const expected = "签名错误 🌤";
+        const bytes = new TextEncoder().encode("﻿" + expected);
+        const body = new ReadableStream<Uint8Array>({ start(controller) {
+            for (const byte of bytes) controller.enqueue(new Uint8Array([byte]));
+            controller.close();
+        } });
+        expect(await abortTimeoutUtil.readTextWithTimeoutAndAbort(new Response(body), 1000)).toBe(expected);
+        expect(body.locked).toBe(false);
+        expect(await abortTimeoutUtil.readTextWithTimeoutAndAbort(new Response(null, { status: 400 }), 1000)).toBe("");
+    });
+
     it("tags idle reads and cancels the reader", async () => {
         const cancel = vi.fn().mockResolvedValue(undefined);
         const reader = { read: () => new Promise(() => {}), cancel } as unknown as ReadableStreamDefaultReader<Uint8Array>;

@@ -67,6 +67,19 @@ export enum ModelRoutingMode {
 
 export const UPSTREAM_FAILURE_COOLDOWN_MS = 30_000;
 
+// 仅在 Gemini 拒绝历史签名后使用；正常请求保留原签名。
+export const GEMINI_THOUGHT_SIGNATURE_RETRY_LIMIT = 1;
+export const GEMINI_THOUGHT_SIGNATURE_BYPASS = "skip_thought_signature_validator";
+// LiteLLM 的 provider_specific_fields 和 __thought__ 后缀使用 base64 签名。
+export const GEMINI_THOUGHT_SIGNATURE_BYPASS_BASE64 = btoa(GEMINI_THOUGHT_SIGNATURE_BYPASS);
+export const GEMINI_THOUGHT_SIGNATURE_ID_SEPARATOR = "__thought__";
+export const GEMINI_THOUGHT_SIGNATURE_BYPASS_VALUES = [
+    GEMINI_THOUGHT_SIGNATURE_BYPASS,
+    "context_engineering_is_the_way_to_go",
+    GEMINI_THOUGHT_SIGNATURE_BYPASS_BASE64,
+    btoa("context_engineering_is_the_way_to_go"),
+];
+
 export const PRICE_UNIT_TOKENS = 1_000_000;
 export const MIN_MODEL_PRICE = 0.0001;
 // 计费/存储粒度：余额按 0.000001 元（微元）的整数倍取整与扣减

@@ -1,4 +1,5 @@
 import customError from "../../customError";
+import protocolConverterUtil from "./protocolConverterUtil";
 import { BaseConverter } from "./BaseConverter";
 import type {
     OpenAIRequest,
@@ -91,6 +92,7 @@ export class OpenAIToResponsesConverter extends BaseConverter {
                             call_id: tc.id,
                             name: tc.function.name,
                             arguments: tc.function.arguments,
+                            ...protocolConverterUtil.copyToolCallSignatureMetadata(tc),
                         });
                     }
                 } else if (msg.content && typeof msg.content === "string") {
@@ -193,6 +195,7 @@ export class OpenAIToResponsesConverter extends BaseConverter {
                         name: item.name,
                         arguments: item.arguments,
                     },
+                    ...protocolConverterUtil.copyToolCallSignatureMetadata(item),
                 });
                 finishReason = "tool_calls";
             } else if (item.type === "reasoning") {

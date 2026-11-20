@@ -17,6 +17,28 @@ describe("OpenAIToResponsesConverter", () => {
     // ─── convertRequest 测试 ───
 
     describe("convertRequest", () => {
+        it("preserves Gemini signature metadata across Chat/Responses tool-call round trips", () => {
+            const metadata = {
+                extra_content: { google: { thought_signature: "google-signature", other: "keep" } },
+                provider_specific_fields: { thought_signature: "provider-signature" },
+            };
+            const request: OpenAIRequest = { model: "alias", messages: [{ role: "assistant", content: null, tool_calls: [{
+                id: "call-1", type: "function", function: { name: "weather", arguments: "{}" }, ...metadata,
+            }] }] };
+            const converted = converter.convertRequest(request);
+            expect(converted.input[0]).toMatchObject(metadata);
+            const reverse = ConverterFactory.create(ApiFormat.RESPONSES, ApiFormat.OPENAI)!;
+            const roundTrip = JSON.parse(reverse.convertRequestBody(JSON.stringify(converted)));
+            expect(roundTrip.messages[0].tool_calls[0]).toMatchObject(metadata);
+            const response: ResponsesNonStreamResponse = {
+                id: "resp-test", object: "response", created_at: 1, status: "completed", model: "alias",
+                output: [{ type: "function_call", id: "fc-1", call_id: "call-1", name: "weather", arguments: "{}", status: "completed", ...metadata }],
+            };
+            const chat = converter.convertResponse(response);
+            expect(chat.choices[0].message.tool_calls![0]).toMatchObject(metadata);
+            expect(reverse.convertResponse(chat).output[0]).toMatchObject(metadata);
+        });
+
         it("should convert simple text request", () => {
             const req: OpenAIRequest = {
                 model: "gpt-4",
